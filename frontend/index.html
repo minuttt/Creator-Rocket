@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CreatorRocket</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<script>
+tailwind.config={theme:{extend:{colors:{bg:'#07070d',surface:'#0f0f1a',card:'#141422',border:'#1e1e35',accent:'#f59e0b',accentLight:'#fbbf24',positive:'#10b981',negative:'#ef4444',warning:'#f97316',muted:'#6b7280',fg:'#e5e7eb'},fontFamily:{display:['Space Grotesk','sans-serif'],mono:['JetBrains Mono','monospace']}}}}
+</script>
+<style>
+:root{--accent:#f59e0b;--positive:#10b981;--negative:#ef4444}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Space Grotesk',sans-serif;background:#07070d;color:#e5e7eb;overflow-x:hidden}
+.bg-grid{position:fixed;inset:0;background-image:linear-gradient(rgba(245,158,11,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(245,158,11,0.03) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;z-index:0}
+.bg-glow{position:fixed;border-radius:50%;filter:blur(150px);pointer-events:none;z-index:0;opacity:0.4;animation:glowFloat 12s ease-in-out infinite alternate}
+.bg-glow-1{width:600px;height:600px;top:-200px;right:-100px;background:radial-gradient(circle,rgba(245,158,11,0.12),transparent 70%)}
+.bg-glow-2{width:500px;height:500px;bottom:-300px;left:-200px;background:radial-gradient(circle,rgba(16,185,129,0.08),transparent 70%);animation-delay:-6s}
+@keyframes glowFloat{0%{transform:translate(0,0) scale(1)}100%{transform:translate(40px,-30px) scale(1.15)}}
+.score-ring{transition:stroke-dashoffset 2s cubic-bezier(0.4,0,0.2,1)}
+.signal-card{transition:all 0.3s cubic-bezier(0.4,0,0.2,1);border:1px solid #1e1e35}
+.signal-card:hover{border-color:rgba(245,158,11,0.3);transform:translateY(-2px);box-shadow:0 8px 30px rgba(245,158,11,0.08)}
+.pulse-dot{animation:pulseDot 1.4s ease-in-out infinite}.pulse-dot:nth-child(2){animation-delay:.2s}.pulse-dot:nth-child(3){animation-delay:.4s}
+@keyframes pulseDot{0%,80%,100%{transform:scale(.6);opacity:.4}40%{transform:scale(1);opacity:1}}
+.slide-up{animation:slideUp .6s cubic-bezier(.16,1,.3,1) forwards;opacity:0;transform:translateY(30px)}
+@keyframes slideUp{to{opacity:1;transform:translateY(0)}}
+.search-input:focus{box-shadow:0 0 0 2px rgba(245,158,11,0.3),0 0 40px rgba(245,158,11,0.08)}
+.progress-fill{transition:width 1.5s cubic-bezier(0.4,0,0.2,1)}
+.risk-bar-fill{transition:width 1.2s cubic-bezier(0.4,0,0.2,1)}
+.toast-msg{animation:toastIn .4s cubic-bezier(.16,1,.3,1) forwards,toastOut .3s ease 3.5s forwards}
+@keyframes toastIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes toastOut{to{transform:translateX(120%);opacity:0}}
+.typing-cursor::after{content:'|';animation:blink .8s step-end infinite;color:var(--accent)}
+@keyframes blink{50%{opacity:0}}
+.step-waiting{color:rgba(107,114,128,0.45)}.step-active{color:#9ca3af}.step-done{color:rgba(16,185,129,0.8)}
+.platform-tiktok{background:rgba(238,29,82,0.15);color:#ee1d52}.platform-instagram{background:rgba(225,48,108,0.15);color:#e1306c}.platform-youtube{background:rgba(255,0,0,0.15);color:#ff0000}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#07070d}::-webkit-scrollbar-thumb{background:#1e1e35;border-radius:3px}
+.counter-value{font-variant-numeric:tabular-nums}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body class="min-h-screen">
+<div class="bg-grid"></div>
+<div class="bg-glow bg-glow-1"></div>
+<div class="bg-glow bg-glow-2"></div>
+<div id="toastContainer" class="fixed top-6 right-6 z-50 flex flex-col gap-3"></div>
+
+<header class="relative z-10 border-b border-border/50 backdrop-blur-md bg-bg/70">
+  <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-accent to-orange-600 flex items-center justify-center"><i class="fa-solid fa-rocket text-white text-sm"></i></div>
+      <span class="font-display font-bold text-xl text-white tracking-tight">CreatorRocket</span>
+      <span id="backendStatus" class="text-[10px] px-2 py-0.5 rounded-full font-mono ml-1" style="background:rgba(107,114,128,0.2);color:#6b7280">Checking API...</span>
+    </div>
+  </div>
+</header>
+
+<main class="relative z-10 max-w-7xl mx-auto px-6 pb-20">
+
+  <section id="heroSection" class="pt-16 pb-12">
+    <div class="text-center max-w-2xl mx-auto mb-10">
+      <h1 class="font-display text-4xl sm:text-5xl font-bold text-white leading-tight mb-4">Find the Next<br><span class="bg-gradient-to-r from-accent via-accentLight to-orange-400 bg-clip-text text-transparent">Breakout Creator</span></h1>
+      <p class="text-muted text-lg leading-relaxed">AI-powered predictive intelligence that identifies micro-influencers poised to explode — before they become expensive.</p>
+    </div>
+    <div class="max-w-xl mx-auto">
+      <div class="relative">
+        <div class="flex rounded-xl overflow-hidden border border-border bg-surface focus-within:border-accent/40 transition-all">
+          <button id="platformBtn" onclick="togglePlatform()" class="flex items-center gap-2 px-4 bg-card border-r border-border text-sm font-medium hover:bg-border/40 transition-colors" aria-label="Select platform">
+            <i id="platformIcon" class="fa-brands fa-youtube text-[#ff0000]"></i><span id="platformLabel" class="hidden sm:inline">YouTube</span><i class="fa-solid fa-chevron-down text-[10px] text-muted"></i>
+          </button>
+          <input id="searchInput" type="text" placeholder="Enter Channel ID (e.g. UCX6OQ3DkcsbYNE6H8uQQuVA)..." class="search-input flex-1 bg-transparent px-5 py-4 text-white placeholder-muted/60 outline-none text-base font-display" onkeydown="if(event.key==='Enter')runAnalysis()" aria-label="Creator Channel ID">
+          <button id="analyzeBtn" onclick="runAnalysis()" class="px-6 bg-gradient-to-r from-accent to-orange-500 hover:from-accentLight hover:to-orange-400 text-black font-semibold text-sm transition-all flex items-center gap-2"><i class="fa-solid fa-bolt"></i><span class="hidden sm:inline">Analyze</span></button>
+        </div>
+        <div id="platformDropdown" class="absolute left-0 top-full mt-2 bg-card border border-border rounded-lg overflow-hidden shadow-2xl z-20 hidden min-w-[160px]">
+          <button onclick="selectPlatform('youtube')" class="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-border/40 transition-colors text-left text-fg"><i class="fa-brands fa-youtube text-[#ff0000]"></i> YouTube</button>
+          <button onclick="selectPlatform('tiktok')" class="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-border/40 transition-colors text-left text-fg"><i class="fa-brands fa-tiktok text-[#ee1d52]"></i> TikTok (Sim)</button>
+          <button onclick="selectPlatform('instagram')" class="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-border/40 transition-colors text-left text-fg"><i class="fa-brands fa-instagram text-[#e1306c]"></i> Instagram (Sim)</button>
+        </div>
+      </div>
+      <div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
+        <span class="text-muted">Try Track API first:</span>
+        <code class="px-3 py-1 rounded-full bg-card border border-border text-muted text-[11px]">POST /creators/track?channel_id=UCX6OQ3DkcsbYNE6H8uQQuVA</code>
+      </div>
+    </div>
+  </section>
+
+  <section id="loadingSection" class="hidden py-20">
+    <div class="max-w-md mx-auto text-center">
+      <div class="w-20 h-20 mx-auto mb-6 rounded-full border-2 border-accent/20 border-t-accent animate-spin"></div>
+      <h2 class="font-display text-xl font-semibold text-white mb-2">Analyzing Creator Profile</h2>
+      <p id="loadingStatus" class="text-muted text-sm mb-6">Pulling historical data...</p>
+      <div class="flex items-center justify-center gap-2"><div class="pulse-dot w-2 h-2 rounded-full bg-accent"></div><div class="pulse-dot w-2 h-2 rounded-full bg-accent"></div><div class="pulse-dot w-2 h-2 rounded-full bg-accent"></div></div>
+      <div class="mt-8 space-y-3 text-left text-sm">
+        <div id="step1" class="flex items-center gap-3 step-waiting"><i class="fa-solid fa-circle text-[6px] w-4 text-center"></i><span>Fetching follower history and engagement metrics</span></div>
+        <div id="step2" class="flex items-center gap-3 step-waiting"><i class="fa-solid fa-circle text-[6px] w-4 text-center"></i><span>Running content DNA and niche momentum analysis</span></div>
+        <div id="step3" class="flex items-center gap-3 step-waiting"><i class="fa-solid fa-circle text-[6px] w-4 text-center"></i><span>Generating trajectory forecast and risk assessment</span></div>
+        <div id="step4" class="flex items-center gap-3 step-waiting"><i class="fa-solid fa-circle text-[6px] w-4 text-center"></i><span>Computing collab recommendation and final score</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="resultsSection" class="hidden">
+    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8 p-5 rounded-xl bg-surface border border-border">
+      <div id="creatorAvatar" class="w-14 h-14 rounded-full bg-gradient-to-br from-accent/30 to-orange-500/30 border-2 border-accent/40 flex items-center justify-center text-xl font-bold text-accent shrink-0">?</div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-3 flex-wrap">
+          <h2 id="creatorName" class="font-display text-xl font-bold text-white"></h2>
+          <span id="creatorPlatformBadge" class="text-xs px-2.5 py-0.5 rounded-full font-medium"></span>
+          <span id="creatorNiche" class="text-xs px-2.5 py-0.5 rounded-full bg-card border border-border text-muted"></span>
+        </div>
+        <div class="flex items-center gap-4 mt-1.5 text-sm text-muted flex-wrap">
+          <span id="creatorFollowers" class="counter-value"></span><span class="text-border">|</span><span id="creatorLocation"></span><span class="text-border">|</span><span id="creatorCadence"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
+      <div class="signal-card rounded-xl bg-surface p-6 flex flex-col items-center justify-center">
+        <p class="text-xs font-mono text-muted uppercase tracking-widest mb-4">Breakout Probability</p>
+        <div class="relative w-44 h-44">
+          <svg viewBox="0 0 160 160" class="w-full h-full -rotate-90"><circle cx="80" cy="80" r="68" stroke="#1e1e35" stroke-width="8" fill="none"/><circle id="scoreRing" class="score-ring" cx="80" cy="80" r="68" stroke="url(#scoreGrad)" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="427.26" stroke-dashoffset="427.26"/><defs><linearGradient id="scoreGrad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#10b981"/></linearGradient></defs></svg>
+          <div class="absolute inset-0 flex flex-col items-center justify-center"><span id="scoreValue" class="font-mono text-4xl font-bold text-white counter-value">0</span><span class="text-xs text-muted mt-1">/ 100</span></div>
+        </div>
+        <div class="mt-4 flex gap-4 text-xs text-center"><div><p class="text-muted">12mo</p><p id="prob12" class="font-mono font-semibold text-accent counter-value">—</p></div><div class="w-px bg-border"></div><div><p class="text-muted">24mo</p><p id="prob24" class="font-mono font-semibold text-positive counter-value">—</p></div></div>
+      </div>
+      <div class="lg:col-span-2 signal-card rounded-xl bg-surface p-6">
+        <div class="flex items-center justify-between mb-4">
+          <p class="text-xs font-mono text-muted uppercase tracking-widest">Follower Trajectory Forecast</p>
+          <div class="flex gap-1">
+            <button onclick="setChartRange('6m')" class="chart-range-btn px-2.5 py-1 rounded text-xs bg-card border border-border text-muted hover:text-white transition-colors" data-range="6m">6M</button>
+            <button onclick="setChartRange('12m')" class="chart-range-btn px-2.5 py-1 rounded text-xs bg-accent/20 border border-accent/30 text-accent" data-range="12m">12M</button>
+            <button onclick="setChartRange('24m')" class="chart-range-btn px-2.5 py-1 rounded text-xs bg-card border border-border text-muted hover:text-white transition-colors" data-range="24m">24M</button>
+          </div>
+        </div>
+        <div style="height:220px"><canvas id="trajectoryChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+      <div class="signal-card rounded-xl bg-surface p-6"><p class="text-xs font-mono text-muted uppercase tracking-widest mb-5">Key Growth Drivers</p><div id="driversContainer" class="space-y-4"></div></div>
+      <div class="signal-card rounded-xl bg-surface p-6"><p class="text-xs font-mono text-muted uppercase tracking-widest mb-5">Risk Assessment</p><div id="risksContainer" class="space-y-4"></div></div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
+      <div class="signal-card rounded-xl bg-surface p-6">
+        <p class="text-xs font-mono text-muted uppercase tracking-widest mb-5">Collab Recommendation</p>
+        <div class="flex items-center gap-3 mb-4"><div class="w-10 h-10 rounded-lg bg-positive/10 flex items-center justify-center"><i class="fa-solid fa-crosshairs text-positive"></i></div><div><p class="text-sm font-semibold text-white">Optimal Window</p><p id="collabWindow" class="text-xs text-muted"></p></div></div>
+        <div class="space-y-3">
+          <div class="flex justify-between items-center"><span class="text-sm text-muted">Budget Sweet Spot</span><span id="collabBudget" class="font-mono text-sm font-semibold text-accent"></span></div>
+          <div class="flex justify-between items-center"><span class="text-sm text-muted">Expected ROI</span><span id="collabROI" class="font-mono text-sm font-semibold text-positive"></span></div>
+          <div class="flex justify-between items-center"><span class="text-sm text-muted">Urgency</span><span id="collabUrgency" class="text-sm font-semibold"></span></div>
+        </div>
+      </div>
+      <div class="lg:col-span-2 signal-card rounded-xl bg-surface p-6">
+        <div class="flex items-center gap-2 mb-4"><div class="w-6 h-6 rounded-md bg-accent/15 flex items-center justify-center"><i class="fa-solid fa-wand-magic-sparkles text-accent text-xs"></i></div><p class="text-xs font-mono text-muted uppercase tracking-widest">Why This Creator Will Win</p></div>
+        <p id="aiExplanation" class="text-fg leading-relaxed text-[15px]"></p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+      <div class="signal-card rounded-xl bg-surface p-4 text-center"><p class="text-xs text-muted mb-1">Follower Velocity</p><p id="metricVelocity" class="font-mono text-lg font-bold text-accent counter-value">—</p><p class="text-[10px] text-muted">followers/week</p></div>
+      <div class="signal-card rounded-xl bg-surface p-4 text-center"><p class="text-xs text-muted mb-1">Engagement Rate</p><p id="metricEngagement" class="font-mono text-lg font-bold text-positive counter-value">—</p><p class="text-[10px] text-muted">avg last 30 days</p></div>
+      <div class="signal-card rounded-xl bg-surface p-4 text-center"><p class="text-xs text-muted mb-1">Virality Index</p><p id="metricVirality" class="font-mono text-lg font-bold text-accentLight counter-value">—</p><p class="text-[10px] text-muted">views/follower ratio</p></div>
+      <div class="signal-card rounded-xl bg-surface p-4 text-center"><p class="text-xs text-muted mb-1">Consistency Score</p><p id="metricConsistency" class="font-mono text-lg font-bold text-white counter-value">—</p><p class="text-[10px] text-muted">posting regularity</p></div>
+    </div>
+
+    <div class="signal-card rounded-xl bg-surface p-6 mb-5">
+      <p class="text-xs font-mono text-muted uppercase tracking-widest mb-4">Engagement Trend (Last 90 Days)</p>
+      <div style="height:180px"><canvas id="engagementChart"></canvas></div>
+    </div>
+    <div class="text-center py-6 border-t border-border/50"><p class="text-xs text-muted/60 max-w-lg mx-auto">Predictions are probabilistic, not guarantees. Powered by XGBoost analysis with real YouTube Data API integration.</p></div>
+  </section>
+</main>
+
+<script>
+var currentPlatform='youtube';
+var trajectoryChart=null;
+var engagementChart=null;
+var currentData=null;
+
+function showToast(msg,type){
+  type=type||'info';
+  var c=document.getElementById('toastContainer');
+  var t=document.createElement('div');
+  var col={info:'border-yellow-500/40 bg-yellow-500/10 text-yellow-400',success:'border-emerald-500/40 bg-emerald-500/10 text-emerald-400',error:'border-red-500/40 bg-red-500/10 text-red-400'};
+  t.className='toast-msg px-4 py-3 rounded-lg border text-sm font-medium backdrop-blur-md '+(col[type]||col.info);
+  t.textContent=msg;c.appendChild(t);setTimeout(function(){if(t.parentNode)t.remove()},4500);
+}
+
+function togglePlatform(){document.getElementById('platformDropdown').classList.toggle('hidden')}
+function selectPlatform(p){
+  currentPlatform=p;
+  var iconMap={'youtube':'fa-brands fa-youtube text-[#ff0000]','tiktok':'fa-brands fa-tiktok text-[#ee1d52]','instagram':'fa-brands fa-instagram text-[#e1306c]'};
+  document.getElementById('platformIcon').className=iconMap[p];
+  document.getElementById('platformLabel').textContent=p.charAt(0).toUpperCase()+p.slice(1);
+  document.getElementById('platformDropdown').classList.add('hidden');
+}
+function fillCreator(name){document.getElementById('searchInput').value=name;runAnalysis()}
+document.addEventListener('click',function(e){if(!e.target.closest('#platformBtn')&&!e.target.closest('#platformDropdown'))document.getElementById('platformDropdown').classList.add('hidden')});
+
+function checkBackend(){
+  var controller=new AbortController();
+  var timeoutId=setTimeout(function(){controller.abort()},3000);
+  fetch('/api/health',{signal:controller.signal})
+    .then(function(r){clearTimeout(timeoutId);return r.json()})
+    .then(function(d){
+      var el=document.getElementById('backendStatus');
+      if(d.status==='ok'&&d.model_loaded){
+        el.style.background='rgba(16,185,129,0.15)';el.style.color='#10b981';
+        el.innerHTML='<i class="fa-solid fa-circle text-[6px] mr-1"></i>API Connected';
+      }else{
+        el.style.background='rgba(245,158,11,0.15)';el.style.color='#f59e0b';
+        el.innerHTML='<i class="fa-solid fa-circle text-[6px] mr-1"></i>Model Loading...';
+      }
+    })
+    .catch(function(){
+      var el=document.getElementById('backendStatus');
+      el.style.background='rgba(239,68,68,0.15)';el.style.color='#ef4444';
+      el.innerHTML='<i class="fa-solid fa-circle text-[6px] mr-1"></i>API Offline';
+    });
+}
+checkBackend();setInterval(checkBackend,15000);
+
+async function runAnalysis(){
+  var input=document.getElementById('searchInput').value.trim();
+  if(!input){showToast('Please enter a Channel ID or username','error');return}
+
+  document.getElementById('heroSection').style.display='none';
+  document.getElementById('resultsSection').style.display='none';
+  document.getElementById('loadingSection').style.display='block';
+
+  var steps=['step1','step2','step3','step4'];
+  var statuses=['Pulling historical data...','Analyzing content DNA...','Running trajectory forecast...','Generating prediction report...'];
+  steps.forEach(function(s){var el=document.getElementById(s);el.className='flex items-center gap-3 step-waiting';el.querySelector('i').className='fa-solid fa-circle text-[6px] w-4 text-center'});
+  var stepIndex=0;document.getElementById('loadingStatus').textContent=statuses[0];
+  var stepInt=setInterval(function(){
+    if(stepIndex<4){
+      var el=document.getElementById(steps[stepIndex]);el.className='flex items-center gap-3 step-active';
+      el.querySelector('i').className='fa-solid fa-circle-notch fa-spin text-yellow-500 text-xs w-4';
+      document.getElementById('loadingStatus').textContent=statuses[stepIndex];
+      if(stepIndex>0){var p=document.getElementById(steps[stepIndex-1]);p.className='flex items-center gap-3 step-done';p.querySelector('i').className='fa-solid fa-check text-emerald-400 text-xs w-4'}
+      stepIndex++;
+    }
+  },700);
+
+  var username=input;
+  var apiError=null;
+
+  try{
+    var controller=new AbortController();
+    var timeoutId=setTimeout(function(){controller.abort()},15000);
+    var resp=await fetch('/api/analyze?username='+encodeURIComponent(username)+'&platform='+currentPlatform,{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    signal:controller.signal
+});
+    clearTimeout(timeoutId);
+
+    if(!resp.ok){
+      var errBody='';
+      try{errBody=await resp.text()}catch(e){}
+      apiError='API returned status '+resp.status+': '+errBody;
+    }else{
+      currentData=await resp.json();
+    }
+  }catch(e){
+    apiError='Network error: '+e.message+'. Make sure the server is running on http://localhost:8000';
+  }
+
+  if(apiError){
+    clearInterval(stepInt);
+    document.getElementById('loadingSection').style.display='none';
+    document.getElementById('heroSection').style.display='block';
+    showToast(apiError,'error');
+    console.error('Analysis failed:',apiError);
+    return;
+  }
+
+  setTimeout(function(){
+    clearInterval(stepInt);
+    steps.forEach(function(s){var el=document.getElementById(s);el.className='flex items-center gap-3 step-done';el.querySelector('i').className='fa-solid fa-check text-emerald-400 text-xs w-4'});
+    document.getElementById('loadingSection').style.display='none';
+    document.getElementById('resultsSection').style.display='block';
+    requestAnimationFrame(function(){requestAnimationFrame(function(){renderResults()})});
+  },2800);
+}
+
+function animateCounter(id,target,dur,suffix){
+  suffix=suffix||'';
+  var el=document.getElementById(id);
+  var st=performance.now();
+  function u(n){
+    var p=Math.min((n-st)/dur,1);
+    var eased=1-Math.pow(1-p,3);
+    el.textContent=Math.floor(target*eased)+suffix;
+    if(p<1)requestAnimationFrame(u);
+  }
+  requestAnimationFrame(u);
+}
+
+function formatNum(n){
+  if(n>=1e6)return(n/1e6).toFixed(1)+'M';
+  if(n>=1e3)return(n/1e3).toFixed(1)+'K';
+  return n.toString();
+}
+
+function renderResults(){
+  var d=currentData;
+  if(!d){showToast('No data received','error');return}
+
+  document.getElementById('creatorAvatar').textContent=(d.name||'?').charAt(0);
+  document.getElementById('creatorName').textContent=d.handle||d.username;
+  var badge=document.getElementById('creatorPlatformBadge');
+  if(d.platform==='youtube'){badge.className='text-xs px-2.5 py-0.5 rounded-full font-medium platform-youtube';badge.innerHTML='<i class="fa-brands fa-youtube mr-1"></i>YouTube'}
+  else if(d.platform==='tiktok'){badge.className='text-xs px-2.5 py-0.5 rounded-full font-medium platform-tiktok';badge.innerHTML='<i class="fa-brands fa-tiktok mr-1"></i>TikTok'}
+  else{badge.className='text-xs px-2.5 py-0.5 rounded-full font-medium platform-instagram';badge.innerHTML='<i class="fa-brands fa-instagram mr-1"></i>Instagram'}
+  document.getElementById('creatorNiche').textContent=d.niche||'';
+  document.getElementById('creatorFollowers').textContent=(d.followersDisplay||formatNum(d.followers))+' followers';
+  document.getElementById('creatorLocation').textContent=d.location||'';
+  document.getElementById('creatorCadence').textContent=d.cadence||'';
+
+  var circ=2*Math.PI*68;
+  var ring=document.getElementById('scoreRing');
+  ring.style.strokeDashoffset=circ.toString();
+  ring.getBoundingClientRect();
+  ring.style.strokeDashoffset=(circ-(d.probScore/100)*circ).toString();
+
+  animateCounter('scoreValue',d.probScore,1500);
+  animateCounter('prob12',d.prob12,1200,'%');
+  animateCounter('prob24',d.prob24,1200,'%');
+  animateCounter('metricVelocity',d.velocity,1200);
+
+  setTimeout(function(){
+    document.getElementById('metricEngagement').textContent=d.engagementRate+'%';
+    document.getElementById('metricVirality').textContent=d.viralityIndex+'x';
+    document.getElementById('metricConsistency').textContent=d.consistencyScore+'/100';
+  },600);
+
+  renderTrajectoryChart('12m');
+
+  var dc=document.getElementById('driversContainer');dc.innerHTML='';
+  (d.drivers||[]).forEach(function(dr,i){
+    var div=document.createElement('div');div.className='slide-up';div.style.animationDelay=(i*0.12)+'s';
+    var bc=dr.strength>80?'bg-emerald-500':dr.strength>60?'bg-yellow-500':'bg-orange-500';
+    var tc=dr.strength>80?'text-emerald-400':dr.strength>60?'text-yellow-400':'text-orange-400';
+    div.innerHTML='<div class="flex justify-between items-center mb-1.5"><span class="text-sm font-medium text-gray-200">'+dr.name+'</span><span class="font-mono text-xs font-semibold '+tc+'">'+dr.strength+'/100</span></div><div class="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden mb-2"><div class="progress-fill h-full '+bc+' rounded-full" style="width:0%"></div></div><p class="text-xs text-gray-500 leading-relaxed">'+dr.desc+'</p>';
+    dc.appendChild(div);
+    setTimeout(function(){div.querySelector('.progress-fill').style.width=dr.strength+'%'},200+i*150);
+  });
+
+  var rc=document.getElementById('risksContainer');rc.innerHTML='';
+  (d.risks||[]).forEach(function(ri,i){
+    var div=document.createElement('div');div.className='slide-up';div.style.animationDelay=(i*0.12+0.3)+'s';
+    var bc=ri.level>50?'bg-red-500':ri.level>30?'bg-orange-500':'bg-emerald-500';
+    var tc=ri.level>50?'text-red-400':ri.level>30?'text-orange-400':'text-emerald-400';
+    var rl=ri.level>50?'High':ri.level>30?'Medium':'Low';
+    div.innerHTML='<div class="flex justify-between items-center mb-1.5"><span class="text-sm font-medium text-gray-200">'+ri.name+'</span><span class="flex items-center gap-2"><span class="text-xs '+tc+' font-medium">'+rl+'</span><span class="font-mono text-xs text-gray-500">'+ri.level+'/100</span></span></div><div class="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden mb-2"><div class="risk-bar-fill h-full '+bc+' rounded-full" style="width:0%"></div></div><p class="text-xs text-gray-500 leading-relaxed">'+ri.desc+'</p>';
+    rc.appendChild(div);
+    setTimeout(function(){div.querySelector('.risk-bar-fill').style.width=ri.level+'%'},400+i*150);
+  });
+
+  if(d.collab){
+    document.getElementById('collabWindow').textContent=d.collab.window;
+    document.getElementById('collabBudget').textContent=d.collab.budget;
+    document.getElementById('collabROI').textContent=d.collab.roi;
+    var ue=document.getElementById('collabUrgency');ue.textContent=d.collab.urgency;
+    ue.style.color=d.collab.urgency==='High'?'#ef4444':d.collab.urgency==='Medium'?'#f59e0b':'#10b981';
+  }
+
+  var ex=document.getElementById('aiExplanation');ex.textContent='';ex.classList.add('typing-cursor');
+  var ci=0;var txt=d.explanation||'';
+  var ti=setInterval(function(){
+    if(ci<txt.length){ex.textContent=txt.slice(0,ci+2);ci+=2}
+    else{ex.textContent=txt;ex.classList.remove('typing-cursor');clearInterval(ti)}
+  },18);
+
+  renderEngagementChart();
+}
+
+function renderTrajectoryChart(range){
+  var d=currentData;if(!d)return;
+  var canvas=document.getElementById('trajectoryChart');
+  if(trajectoryChart){trajectoryChart.destroy();trajectoryChart=null}
+
+  var fc;
+  if(range==='6m')fc=d.trajectoryForecast6||[];
+  else if(range==='12m')fc=d.trajectoryForecast12||[];
+  else fc=d.trajectoryForecast24||[];
+
+  var hL=(d.trajectoryHistorical||[]).length;
+  var fcL=fc.length;
+  var labels=[];
+  var mN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var now=new Date();
+  for(var i=hL-1;i>=0;i--){var m=new Date(now.getFullYear(),now.getMonth()-i,1);labels.push(mN[m.getMonth()]+"'"+String(m.getFullYear()).slice(2))}
+  for(var i=1;i<=fcL;i++){var m=new Date(now.getFullYear(),now.getMonth()+i,1);labels.push(mN[m.getMonth()]+"'"+String(m.getFullYear()).slice(2))}
+
+  var hD=(d.trajectoryHistorical||[]).slice();for(var i=0;i<fcL;i++)hD.push(null);
+  var fD=[];for(var i=0;i<hL-1;i++)fD.push(null);if(hL>0)fD.push(d.trajectoryHistorical[d.trajectoryHistorical.length-1]);for(var i=0;i<fcL;i++)fD.push(fc[i]);
+
+  trajectoryChart=new Chart(canvas,{
+    type:'line',
+    data:{labels:labels,datasets:[
+      {label:'Historical',data:hD,borderColor:'#6b7280',backgroundColor:'rgba(107,114,128,0.1)',borderWidth:2,pointRadius:0,tension:0.4,fill:true,spanGaps:false},
+      {label:'Forecast',data:fD,borderColor:'#f59e0b',backgroundColor:'rgba(245,158,11,0.08)',borderWidth:2.5,borderDash:[6,3],pointRadius:0,tension:0.4,fill:true,spanGaps:false}
+    ]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{legend:{display:false},tooltip:{backgroundColor:'#141422',borderColor:'#1e1e35',borderWidth:1,titleColor:'#e5e7eb',bodyColor:'#9ca3af',padding:10,callbacks:{label:function(ctx){return ctx.raw===null?null:ctx.dataset.label+': '+formatNum(ctx.raw)}}}},
+      scales:{x:{ticks:{color:'#4b5563',font:{size:10},maxTicksLimit:8},grid:{color:'rgba(30,30,53,0.5)'},border:{display:false}},y:{ticks:{color:'#4b5563',font:{size:10},callback:function(v){return formatNum(v)}},grid:{color:'rgba(30,30,53,0.5)'},border:{display:false}}}
+    }
+  });
+}
+
+function setChartRange(r){
+  document.querySelectorAll('.chart-range-btn').forEach(function(b){
+    b.className=b.getAttribute('data-range')===r?'chart-range-btn px-2.5 py-1 rounded text-xs bg-accent/20 border border-accent/30 text-accent':'chart-range-btn px-2.5 py-1 rounded text-xs bg-card border border-border text-muted hover:text-white transition-colors';
+  });
+  renderTrajectoryChart(r);
+}
+
+function renderEngagementChart(){
+  var d=currentData;if(!d)return;
+  var canvas=document.getElementById('engagementChart');
+  if(engagementChart){engagementChart.destroy();engagementChart=null}
+  var ed=d.engagementData||[];
+  var labels=[];var now=new Date();var mN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  for(var i=ed.length-1;i>=0;i--){var m=new Date(now.getFullYear(),now.getMonth()-i,1);labels.push(mN[m.getMonth()])}
+  var bc=ed.map(function(v,i){var t=i/Math.max(1,ed.length-1);return'rgba('+Math.floor(107+(245-107)*t)+','+Math.floor(114+(158-114)*t)+','+Math.floor(128+(11-128)*t)+',0.7)'});
+  engagementChart=new Chart(canvas,{
+    type:'bar',
+    data:{labels:labels,datasets:[{label:'Engagement Rate %',data:ed,backgroundColor:bc,borderRadius:4,borderSkipped:false}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{backgroundColor:'#141422',borderColor:'#1e1e35',borderWidth:1,titleColor:'#e5e7eb',bodyColor:'#9ca3af',padding:10,callbacks:{label:function(ctx){return'Engagement: '+ctx.raw+'%'}}}},
+      scales:{x:{ticks:{color:'#4b5563',font:{size:10}},grid:{display:false},border:{display:false}},y:{ticks:{color:'#4b5563',font:{size:10},callback:function(v){return v+'%'}},grid:{color:'rgba(30,30,53,0.5)'},border:{display:false}}}
+    }
+  });
+}
+</script>
+</body>
+</html>
