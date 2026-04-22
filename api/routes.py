@@ -73,6 +73,31 @@ async def analyze_creator(username: str, platform: str = "youtube", db: Session 
     
     if creator:
         snapshots = db.query(Snapshot).filter(Snapshot.creator_id == creator.id).order_by(Snapshot.timestamp.desc()).limit(30).all()
+        
+        # AUTO-REFRESH: If we have less than 2 snapshots OR the latest is older than 10 mins, fetch fresh data!
+        needs_update = False
+        if len(snapshots) < 2:
+            needs_update = True
+        elif snapshots:
+            from datetime import datetime, timedelta
+            if datetime.utcnow() - snapshots[0].timestamp > timedelta(minutes=10):
+                needs_update = True
+                
+        if needs_update:
+            stats = get_channel_stats(creator.channel_id)
+            if stats:
+                new_snap = Snapshot(
+                    creator_id=creator.id,
+                    subscriber_count=stats["subscriber_count"],
+                    view_count=stats["view_count"],
+                    video_count=stats["video_count"]
+                )
+                db.add(new_snap)
+                db.commit()
+                # Refresh the snapshots list to include the brand new one
+                snapshots = db.query(Snapshot).filter(Snapshot.creator_id == creator.id).order_by(Snapshot.timestamp.desc()).limit(30).all()
+                logger.info(f"Auto-refreshed data for {creator.name}")
+                
         latest_vids = get_recent_videos(creator.channel_id)
         features = feature_engineer.compute_features_from_snapshots(snapshots, latest_vids)
         prediction = predictor.predict_trend(features)
