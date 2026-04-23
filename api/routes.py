@@ -1,11 +1,13 @@
 import os
+import time
 import logging
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from db.database import get_db
 from db.models import Creator, Snapshot
 from data.youtube_client import get_channel_stats, get_recent_videos, search_channels
-from services import feature_engineer, predictor, explanation_engine, simulation
+from services import feature_engineer, predictor, explanation_engine
 
 logger = logging.getLogger("creatorrocket")
 router = APIRouter()
@@ -86,7 +88,7 @@ async def get_trending(db: Session = Depends(get_db)):
 async def analyze_creator(username: str, platform: str = "youtube", db: Session = Depends(get_db)):
     """Analyze a creator. Accepts channel ID or plain name — resolves automatically."""
 
-    # If it doesn't look like a channel ID (UC + 22 chars = 24 total), treat it as a name and search
+    # If it doesn't look like a channel ID (UC + 22 chars = 24 total), treat as name and search
     if not (username.startswith("UC") and len(username) == 24):
         logger.info(f"'{username}' doesn't look like a channel ID — searching by name...")
         results = search_channels(username, max_results=1)
@@ -96,7 +98,7 @@ async def analyze_creator(username: str, platform: str = "youtube", db: Session 
                 detail=f"No YouTube channel found for '{username}'. Try selecting a result from the dropdown."
             )
         resolved_id = results[0]["channel_id"]
-        logger.info(f"Resolved '{username}' -> channel ID '{resolved_id}' ({results[0]['name']})")
+        logger.info(f"Resolved '{username}' -> '{resolved_id}' ({results[0]['name']})")
         username = resolved_id
 
     # Check if channel is already tracked in DB
@@ -110,7 +112,6 @@ async def analyze_creator(username: str, platform: str = "youtube", db: Session 
         if len(snapshots) < 2:
             needs_update = True
         elif snapshots:
-            from datetime import datetime, timedelta
             if datetime.utcnow() - snapshots[0].timestamp > timedelta(minutes=10):
                 needs_update = True
 
@@ -124,7 +125,6 @@ async def analyze_creator(username: str, platform: str = "youtube", db: Session 
                     video_count=stats["video_count"]
                 )
                 db.add(new_snap)
-                # Also update thumbnail in case it changed
                 if stats.get("thumbnail"):
                     creator.profile_picture_url = stats["thumbnail"]
                 db.commit()
@@ -179,8 +179,8 @@ async def analyze_creator(username: str, platform: str = "youtube", db: Session 
         }
 
     else:
-        # Channel not yet tracked — auto-track it on first analyze request
-        logger.info(f"Channel {username} not in DB. Auto-tracking now...")
+        # Channel not yet tracked — auto-track with two immediate snapshots
+        logger.info(f"Channel {username} not in DB. Auto-tracking with double snapshot...")
 
         stats = get_channel_stats(username)
         if not stats:
@@ -199,16 +199,32 @@ async def analyze_creator(username: str, platform: str = "youtube", db: Session 
         db.commit()
         db.refresh(new_creator)
 
-        initial_snap = Snapshot(
+        # First snapshot
+        snap1 = Snapshot(
             creator_id=new_creator.id,
             subscriber_count=stats["subscriber_count"],
             view_count=stats["view_count"],
             video_count=stats["video_count"]
         )
-        db.add(initial_snap)
+        db.add(snap1)
         db.commit()
+        logger.info(f"First snapshot saved for {stats['name']}.")
 
-        logger.info(f"Auto-tracked {stats['name']}. Fetching first analysis...")
+        # Wait briefly then fetch a second snapshot so feature_engineer
+        # has 2 data points and returns real engagement/virality metrics
+        # instead of falling back to defaults
+        time.sleep(2)
+        stats2 = get_channel_stats(username)
+        if stats2:
+            snap2 = Snapshot(
+                creator_id=new_creator.id,
+                subscriber_count=stats2["subscriber_count"],
+                view_count=stats2["view_count"],
+                video_count=stats2["video_count"]
+            )
+            db.add(snap2)
+            db.commit()
+            logger.info(f"Second snapshot saved for {stats['name']}.")
 
         snapshots = db.query(Snapshot).filter(Snapshot.creator_id == new_creator.id).order_by(Snapshot.timestamp.desc()).limit(30).all()
         latest_vids = get_recent_videos(username)
@@ -240,7 +256,6 @@ async def analyze_creator(username: str, platform: str = "youtube", db: Session 
             "followersDisplay": features["followersDisplay"],
             "cadence": raw_data["cadence"],
             "thumbnail": stats.get("thumbnail", ""),
-            "first_analysis": True,
             "probScore": prediction["prob_score"],
             "prob12": max(1, prediction["prob_score"] - 5),
             "prob24": min(99, prediction["prob_score"] + 8),
