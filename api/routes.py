@@ -117,9 +117,10 @@ async def analyze_creator(username: str, platform: str = "youtube", db: Session 
         prediction = predictor.predict_trend(features)
         
         raw_data = {
-            "name": creator.name, "handle": f"@{creator.channel_id}", "niche": "YouTube", 
+            "name": creator.name, "handle": f"@{creator.channel_id}", "niche": "YouTube",
             "location": "Global", "followers": features["followers"], "followersDisplay": features["followersDisplay"],
             "cadence": f"{snapshots[0].video_count} videos" if snapshots else "0 videos",
+            "thumbnail": creator.profile_picture_url or "",  # ADD THIS
             **features
         }
         expl = explanation_engine.generate_explanation(raw_data, {"prob_score": prediction["prob_score"]})
@@ -137,7 +138,8 @@ async def analyze_creator(username: str, platform: str = "youtube", db: Session 
             "trajectoryForecast6": [int(features["followers"] * (1.05**i)) for i in range(1,7)],
             "trajectoryForecast12": [int(features["followers"] * (1.05**i)) for i in range(1,13)],
             "trajectoryForecast24": [int(features["followers"] * (1.05**i)) for i in range(1,25)],
-            "engagementData": [features["engagement_rate"]] * 13
+            "engagementData": [features["engagement_rate"]] * 13,
+            "thumbnail": creator.profile_picture_url or ""
         }
     # WITH this:
     else:
@@ -152,7 +154,12 @@ async def analyze_creator(username: str, platform: str = "youtube", db: Session 
             )
         
         # Create creator record
-        new_creator = Creator(channel_id=username, name=stats["name"], platform="youtube")
+        new_creator = Creator(
+            channel_id=username,
+            name=stats["name"],
+            platform="youtube",
+            profile_picture_url=stats.get("thumbnail", "")
+        )
         db.add(new_creator)
         db.commit()
         db.refresh(new_creator)
@@ -197,7 +204,9 @@ async def analyze_creator(username: str, platform: str = "youtube", db: Session 
             "trajectoryForecast6": [int(features["followers"] * (1.05**i)) for i in range(1, 7)],
             "trajectoryForecast12": [int(features["followers"] * (1.05**i)) for i in range(1, 13)],
             "trajectoryForecast24": [int(features["followers"] * (1.05**i)) for i in range(1, 25)],
-            "engagementData": [features["engagement_rate"]] * 13
+            "engagementData": [features["engagement_rate"]] * 13,
+            "thumbnail": stats.get("thumbnail", ""),
+            "first_analysis": True
         }
 
 @router.get("/api/health")
