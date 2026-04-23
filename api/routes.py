@@ -10,6 +10,15 @@ from services import feature_engineer, predictor, explanation_engine, simulation
 logger = logging.getLogger("creatorrocket")
 router = APIRouter()
 
+
+@router.get("/api/search-channels")
+async def search_channels_endpoint(q: str):
+    """Search YouTube channels by name for the frontend autocomplete."""
+    if not q or len(q) < 2:
+        return []
+    from data.youtube_client import search_channels
+    return search_channels(q, max_results=5)
+
 @router.post("/creators/track")
 async def track_creator(channel_id: str, db: Session = Depends(get_db)):
     """Track a new YouTube creator by channel ID."""
@@ -21,7 +30,12 @@ async def track_creator(channel_id: str, db: Session = Depends(get_db)):
     if not stats:
         raise HTTPException(status_code=404, detail="Channel not found or API error. Check your YOUTUBE_API_KEY and channel_id.")
 
-    new_creator = Creator(channel_id=channel_id, name=stats["name"], platform="youtube")
+    new_creator = Creator(
+        channel_id=channel_id,
+        name=stats["name"],
+        platform="youtube",
+        profile_picture_url=stats.get("thumbnail", "")
+    )
     db.add(new_creator)
     db.commit()
     db.refresh(new_creator)
