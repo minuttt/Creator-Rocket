@@ -373,7 +373,8 @@ async function runAnalysis(){
   if(!input){showToast('Please enter a channel name','error');return;}
   hideDropdown();
 
-  var channelId=selectedChannelId||input;
+  // WITH
+  var channelId=selectedChannelId||(dropdownItems.length>0?dropdownItems[0].channel_id:input);
 
   document.getElementById('heroSection').style.display='none';
   document.getElementById('resultsSection').style.display='none';
