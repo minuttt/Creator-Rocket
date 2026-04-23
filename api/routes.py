@@ -125,9 +125,66 @@ async def analyze_creator(username: str, platform: str = "youtube", db: Session 
             "trajectoryForecast24": [int(features["followers"] * (1.05**i)) for i in range(1,25)],
             "engagementData": [features["engagement_rate"]] * 13
         }
+    # WITH this:
     else:
-        # Fallback to deterministic simulation if not tracked in DB
-        return simulation.generate_simulated_analysis(username, platform)
+        # Channel not yet tracked — auto-track it on first analyze request
+        logger.info(f"Channel {username} not in DB. Auto-tracking now...")
+        
+        stats = get_channel_stats(username)
+        if not stats:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Channel '{username}' not found. Check the Channel ID and ensure your YOUTUBE_API_KEY is set."
+            )
+        
+        # Create creator record
+        new_creator = Creator(channel_id=username, name=stats["name"], platform="youtube")
+        db.add(new_creator)
+        db.commit()
+        db.refresh(new_creator)
+        
+        # Save first snapshot
+        initial_snap = Snapshot(
+            creator_id=new_creator.id,
+            subscriber_count=stats["subscriber_count"],
+            view_count=stats["view_count"],
+            video_count=stats["video_count"]
+        )
+        db.add(initial_snap)
+        db.commit()
+        
+        logger.info(f"Auto-tracked {stats['name']}. Fetching first analysis...")
+        
+        # Now run the real analysis with the data we just fetched
+        snapshots = db.query(Snapshot).filter(Snapshot.creator_id == new_creator.id).order_by(Snapshot.timestamp.desc()).limit(30).all()
+        latest_vids = get_recent_videos(username)
+        features = feature_engineer.compute_features_from_snapshots(snapshots, latest_vids)
+        prediction = predictor.predict_trend(features)
+        
+        raw_data = {
+            "name": stats["name"], "handle": f"@{username}", "niche": "YouTube",
+            "location": "Global", "followers": features["followers"], "followersDisplay": features["followersDisplay"],
+            "cadence": f"{snapshots[0].video_count} videos" if snapshots else "0 videos",
+            **features
+        }
+        expl = explanation_engine.generate_explanation(raw_data, {"prob_score": prediction["prob_score"]})
+        hist = [s.subscriber_count for s in reversed(snapshots)]
+        
+        return {
+            "username": username, "platform": "youtube", "name": stats["name"],
+            "handle": f"@{username}", "niche": "YouTube", "location": "Global",
+            "followers": features["followers"], "followersDisplay": features["followersDisplay"],
+            "cadence": raw_data["cadence"],
+            "probScore": prediction["prob_score"], "prob12": max(1, prediction["prob_score"] - 5), "prob24": min(99, prediction["prob_score"] + 8),
+            "velocity": features["velocity_7d"], "engagementRate": features["engagement_rate"],
+            "viralityIndex": features["virality_score"], "consistencyScore": features["consistency_score"],
+            "drivers": expl["drivers"], "risks": expl["risks"], "collab": expl["collab"], "explanation": expl["explanation"],
+            "trajectoryHistorical": hist,
+            "trajectoryForecast6": [int(features["followers"] * (1.05**i)) for i in range(1, 7)],
+            "trajectoryForecast12": [int(features["followers"] * (1.05**i)) for i in range(1, 13)],
+            "trajectoryForecast24": [int(features["followers"] * (1.05**i)) for i in range(1, 25)],
+            "engagementData": [features["engagement_rate"]] * 13
+        }
 
 @router.get("/api/health")
 async def health():
