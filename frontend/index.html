@@ -39,6 +39,9 @@ body{font-family:'Space Grotesk',sans-serif;background:#07070d;color:#e5e7eb;ove
 .platform-tiktok{background:rgba(238,29,82,0.15);color:#ee1d52}.platform-instagram{background:rgba(225,48,108,0.15);color:#e1306c}.platform-youtube{background:rgba(255,0,0,0.15);color:#ff0000}
 ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#07070d}::-webkit-scrollbar-thumb{background:#1e1e35;border-radius:3px}
 .counter-value{font-variant-numeric:tabular-nums}
+.drop-item{transition:background 0.15s ease}
+.drop-item:hover,.drop-item.active{background:rgba(30,30,53,0.8)}
+.drop-item img{background:#141422}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 </style>
 </head>
@@ -71,21 +74,32 @@ body{font-family:'Space Grotesk',sans-serif;background:#07070d;color:#e5e7eb;ove
           <button id="platformBtn" onclick="togglePlatform()" class="flex items-center gap-2 px-4 bg-card border-r border-border text-sm font-medium hover:bg-border/40 transition-colors" aria-label="Select platform">
             <i id="platformIcon" class="fa-brands fa-youtube text-[#ff0000]"></i><span id="platformLabel" class="hidden sm:inline">YouTube</span><i class="fa-solid fa-chevron-down text-[10px] text-muted"></i>
           </button>
-          <input id="searchInput" type="text" placeholder="Enter Channel ID (e.g. UCX6OQ3DkcsbYNE6H8uQQuVA)..." class="search-input flex-1 bg-transparent px-5 py-4 text-white placeholder-muted/60 outline-none text-base font-display" onkeydown="if(event.key==='Enter')runAnalysis()" aria-label="Creator Channel ID">
+          <input id="searchInput" type="text" placeholder="Search channel name (e.g. MrBeast, Veritasium)..." class="search-input flex-1 bg-transparent px-5 py-4 text-white placeholder-muted/60 outline-none text-base font-display" aria-label="Creator channel name" autocomplete="off" oninput="onSearchInput()" onkeydown="onSearchKeydown(event)">
           <button id="analyzeBtn" onclick="runAnalysis()" class="px-6 bg-gradient-to-r from-accent to-orange-500 hover:from-accentLight hover:to-orange-400 text-black font-semibold text-sm transition-all flex items-center gap-2"><i class="fa-solid fa-bolt"></i><span class="hidden sm:inline">Analyze</span></button>
         </div>
+
+        <!-- Platform dropdown -->
         <div id="platformDropdown" class="absolute left-0 top-full mt-2 bg-card border border-border rounded-lg overflow-hidden shadow-2xl z-20 hidden min-w-[160px]">
           <button onclick="selectPlatform('youtube')" class="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-border/40 transition-colors text-left text-fg"><i class="fa-brands fa-youtube text-[#ff0000]"></i> YouTube</button>
           <button onclick="selectPlatform('tiktok')" class="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-border/40 transition-colors text-left text-fg"><i class="fa-brands fa-tiktok text-[#ee1d52]"></i> TikTok (Sim)</button>
           <button onclick="selectPlatform('instagram')" class="w-full flex items-center gap-3 px-4 py-3 text-sm hover:bg-border/40 transition-colors text-left text-fg"><i class="fa-brands fa-instagram text-[#e1306c]"></i> Instagram (Sim)</button>
         </div>
+
+        <!-- Channel search dropdown -->
+        <div id="searchDropdown" class="absolute left-0 right-0 top-full mt-2 bg-card border border-border rounded-xl overflow-hidden shadow-2xl z-30 hidden">
+          <div id="searchDropdownLoading" class="hidden flex items-center gap-3 px-4 py-3 text-sm text-muted">
+            <i class="fa-solid fa-circle-notch fa-spin text-accent text-xs"></i> Searching channels...
+          </div>
+          <div id="searchDropdownInner"></div>
+        </div>
       </div>
-      
-      <!-- WITH this -->
+
       <div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
-        <span class="text-muted">Example channel IDs:</span>
-        <code class="px-3 py-1 rounded-full bg-card border border-border text-muted text-[11px]">UCX6OQ3DkcsbYNE6H8uQQuVA</code>
-        <code class="px-3 py-1 rounded-full bg-card border border-border text-muted text-[11px]">UC8butISFwT-Wl7EV0hUK0BQ</code>
+        <span class="text-muted">Try searching:</span>
+        <button onclick="quickSearch('MrBeast')" class="px-3 py-1 rounded-full bg-card border border-border text-muted text-[11px] hover:border-accent/40 hover:text-accent transition-colors">MrBeast</button>
+        <button onclick="quickSearch('Veritasium')" class="px-3 py-1 rounded-full bg-card border border-border text-muted text-[11px] hover:border-accent/40 hover:text-accent transition-colors">Veritasium</button>
+        <button onclick="quickSearch('Fireship')" class="px-3 py-1 rounded-full bg-card border border-border text-muted text-[11px] hover:border-accent/40 hover:text-accent transition-colors">Fireship</button>
+        <button onclick="quickSearch('MKBHD')" class="px-3 py-1 rounded-full bg-card border border-border text-muted text-[11px] hover:border-accent/40 hover:text-accent transition-colors">MKBHD</button>
       </div>
     </div>
   </section>
@@ -106,8 +120,15 @@ body{font-family:'Space Grotesk',sans-serif;background:#07070d;color:#e5e7eb;ove
   </section>
 
   <section id="resultsSection" class="hidden">
+    <!-- Creator header -->
     <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8 p-5 rounded-xl bg-surface border border-border">
-      <div id="creatorAvatar" class="w-14 h-14 rounded-full bg-gradient-to-br from-accent/30 to-orange-500/30 border-2 border-accent/40 flex items-center justify-center text-xl font-bold text-accent shrink-0">?</div>
+      <div class="relative shrink-0">
+        <img id="creatorAvatarImg" src="" alt="" class="w-16 h-16 rounded-full border-2 border-accent/40 object-cover hidden">
+        <div id="creatorAvatarFallback" class="w-16 h-16 rounded-full bg-gradient-to-br from-accent/30 to-orange-500/30 border-2 border-accent/40 flex items-center justify-center text-2xl font-bold text-accent">?</div>
+        <div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-[#ff0000] border-2 border-surface flex items-center justify-center">
+          <i class="fa-brands fa-youtube text-white" style="font-size:8px"></i>
+        </div>
+      </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-3 flex-wrap">
           <h2 id="creatorName" class="font-display text-xl font-bold text-white"></h2>
@@ -115,9 +136,18 @@ body{font-family:'Space Grotesk',sans-serif;background:#07070d;color:#e5e7eb;ove
           <span id="creatorNiche" class="text-xs px-2.5 py-0.5 rounded-full bg-card border border-border text-muted"></span>
         </div>
         <div class="flex items-center gap-4 mt-1.5 text-sm text-muted flex-wrap">
-          <span id="creatorFollowers" class="counter-value"></span><span class="text-border">|</span><span id="creatorLocation"></span><span class="text-border">|</span><span id="creatorCadence"></span>
+          <span id="creatorHandle" class="font-mono text-accent/70 text-xs"></span>
+          <span class="text-border">|</span>
+          <span id="creatorFollowers" class="counter-value"></span>
+          <span class="text-border">|</span>
+          <span id="creatorLocation"></span>
+          <span class="text-border">|</span>
+          <span id="creatorCadence"></span>
         </div>
       </div>
+      <button onclick="resetSearch()" class="shrink-0 px-4 py-2 rounded-lg border border-border text-muted text-sm hover:border-accent/40 hover:text-accent transition-colors flex items-center gap-2">
+        <i class="fa-solid fa-magnifying-glass text-xs"></i> New Search
+      </button>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
@@ -183,7 +213,12 @@ var currentPlatform='youtube';
 var trajectoryChart=null;
 var engagementChart=null;
 var currentData=null;
+var selectedChannelId=null;
+var searchTimeout=null;
+var dropdownIndex=-1;
+var dropdownItems=[];
 
+/* ── Toast ── */
 function showToast(msg,type){
   type=type||'info';
   var c=document.getElementById('toastContainer');
@@ -193,6 +228,7 @@ function showToast(msg,type){
   t.textContent=msg;c.appendChild(t);setTimeout(function(){if(t.parentNode)t.remove()},4500);
 }
 
+/* ── Platform selector ── */
 function togglePlatform(){document.getElementById('platformDropdown').classList.toggle('hidden')}
 function selectPlatform(p){
   currentPlatform=p;
@@ -201,14 +237,118 @@ function selectPlatform(p){
   document.getElementById('platformLabel').textContent=p.charAt(0).toUpperCase()+p.slice(1);
   document.getElementById('platformDropdown').classList.add('hidden');
 }
-function fillCreator(name){document.getElementById('searchInput').value=name;runAnalysis()}
-document.addEventListener('click',function(e){if(!e.target.closest('#platformBtn')&&!e.target.closest('#platformDropdown'))document.getElementById('platformDropdown').classList.add('hidden')});
+document.addEventListener('click',function(e){
+  if(!e.target.closest('#platformBtn')&&!e.target.closest('#platformDropdown'))document.getElementById('platformDropdown').classList.add('hidden');
+  if(!e.target.closest('#searchInput')&&!e.target.closest('#searchDropdown'))hideDropdown();
+});
 
+/* ── Channel search / autocomplete ── */
+function quickSearch(name){
+  document.getElementById('searchInput').value=name;
+  selectedChannelId=null;
+  onSearchInput();
+}
+
+function onSearchInput(){
+  var q=document.getElementById('searchInput').value.trim();
+  selectedChannelId=null;
+  clearTimeout(searchTimeout);
+  if(q.length<2){hideDropdown();return;}
+  document.getElementById('searchDropdownLoading').classList.remove('hidden');
+  document.getElementById('searchDropdownInner').innerHTML='';
+  document.getElementById('searchDropdown').classList.remove('hidden');
+  searchTimeout=setTimeout(function(){fetchChannelSuggestions(q);},380);
+}
+
+function onSearchKeydown(e){
+  if(e.key==='ArrowDown'){e.preventDefault();moveDrop(1);}
+  else if(e.key==='ArrowUp'){e.preventDefault();moveDrop(-1);}
+  else if(e.key==='Enter'){
+    if(dropdownIndex>=0&&dropdownItems[dropdownIndex]){selectChannel(dropdownItems[dropdownIndex]);}
+    else{runAnalysis();}
+  }else if(e.key==='Escape'){hideDropdown();}
+}
+
+function moveDrop(dir){
+  var items=document.querySelectorAll('.drop-item');
+  if(!items.length)return;
+  if(dropdownIndex>=0)items[dropdownIndex].classList.remove('active');
+  dropdownIndex=Math.max(0,Math.min(items.length-1,dropdownIndex+dir));
+  items[dropdownIndex].classList.add('active');
+  items[dropdownIndex].scrollIntoView({block:'nearest'});
+}
+
+async function fetchChannelSuggestions(q){
+  try{
+    var resp=await fetch('/api/search-channels?q='+encodeURIComponent(q));
+    if(!resp.ok){hideDropdown();return;}
+    var results=await resp.json();
+    showDropdown(results);
+  }catch(e){hideDropdown();}
+}
+
+function showDropdown(results){
+  dropdownItems=results;
+  dropdownIndex=-1;
+  document.getElementById('searchDropdownLoading').classList.add('hidden');
+  var inner=document.getElementById('searchDropdownInner');
+  if(!results||!results.length){
+    inner.innerHTML='<div class="px-4 py-3 text-sm text-muted">No channels found. Try a different name.</div>';
+    document.getElementById('searchDropdown').classList.remove('hidden');
+    return;
+  }
+  inner.innerHTML='';
+  results.forEach(function(ch,i){
+    var div=document.createElement('div');
+    div.className='drop-item flex items-center gap-3 px-4 py-3 cursor-pointer border-b border-border/40 last:border-0';
+    var thumb=ch.thumbnail
+      ?'<img src="'+escHtml(ch.thumbnail)+'" alt="" class="w-10 h-10 rounded-full object-cover shrink-0 border border-border" onerror="this.outerHTML=\'<div class=\\\"w-10 h-10 rounded-full bg-card border border-border flex items-center justify-center text-accent font-bold text-sm shrink-0\\\">'+escHtml(ch.name.charAt(0).toUpperCase())+'</div>\'">'
+      :'<div class="w-10 h-10 rounded-full bg-card border border-border flex items-center justify-center text-accent font-bold text-sm shrink-0">'+escHtml(ch.name.charAt(0).toUpperCase())+'</div>';
+    div.innerHTML=thumb
+      +'<div class="flex-1 min-w-0">'
+      +'<p class="text-sm font-semibold text-white truncate">'+escHtml(ch.name)+'</p>'
+      +'<p class="text-xs text-muted truncate">'+(ch.description?escHtml(ch.description):escHtml(ch.channel_id))+'</p>'
+      +'</div>'
+      +'<i class="fa-solid fa-bolt text-accent/50 text-xs shrink-0"></i>';
+    div.onclick=function(){selectChannel(ch);};
+    inner.appendChild(div);
+  });
+  document.getElementById('searchDropdown').classList.remove('hidden');
+}
+
+function selectChannel(ch){
+  selectedChannelId=ch.channel_id;
+  document.getElementById('searchInput').value=ch.name;
+  hideDropdown();
+  runAnalysis();
+}
+
+function hideDropdown(){
+  document.getElementById('searchDropdown').classList.add('hidden');
+  document.getElementById('searchDropdownLoading').classList.add('hidden');
+  document.getElementById('searchDropdownInner').innerHTML='';
+  dropdownItems=[];
+  dropdownIndex=-1;
+}
+
+function escHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function resetSearch(){
+  document.getElementById('resultsSection').style.display='none';
+  document.getElementById('heroSection').style.display='block';
+  document.getElementById('searchInput').value='';
+  selectedChannelId=null;
+  currentData=null;
+}
+
+/* ── Backend health ── */
 function checkBackend(){
   var controller=new AbortController();
-  var timeoutId=setTimeout(function(){controller.abort()},3000);
+  var timeoutId=setTimeout(function(){controller.abort();},3000);
   fetch('/api/health',{signal:controller.signal})
-    .then(function(r){clearTimeout(timeoutId);return r.json()})
+    .then(function(r){clearTimeout(timeoutId);return r.json();})
     .then(function(d){
       var el=document.getElementById('backendStatus');
       if(d.status==='ok'&&d.model_loaded){
@@ -227,9 +367,13 @@ function checkBackend(){
 }
 checkBackend();setInterval(checkBackend,15000);
 
+/* ── Main analysis ── */
 async function runAnalysis(){
   var input=document.getElementById('searchInput').value.trim();
-  if(!input){showToast('Please enter a Channel ID or username','error');return}
+  if(!input){showToast('Please enter a channel name','error');return;}
+  hideDropdown();
+
+  var channelId=selectedChannelId||input;
 
   document.getElementById('heroSection').style.display='none';
   document.getElementById('resultsSection').style.display='none';
@@ -237,39 +381,37 @@ async function runAnalysis(){
 
   var steps=['step1','step2','step3','step4'];
   var statuses=['Pulling historical data...','Analyzing content DNA...','Running trajectory forecast...','Generating prediction report...'];
-  steps.forEach(function(s){var el=document.getElementById(s);el.className='flex items-center gap-3 step-waiting';el.querySelector('i').className='fa-solid fa-circle text-[6px] w-4 text-center'});
+  steps.forEach(function(s){var el=document.getElementById(s);el.className='flex items-center gap-3 step-waiting';el.querySelector('i').className='fa-solid fa-circle text-[6px] w-4 text-center';});
   var stepIndex=0;document.getElementById('loadingStatus').textContent=statuses[0];
   var stepInt=setInterval(function(){
     if(stepIndex<4){
       var el=document.getElementById(steps[stepIndex]);el.className='flex items-center gap-3 step-active';
       el.querySelector('i').className='fa-solid fa-circle-notch fa-spin text-yellow-500 text-xs w-4';
       document.getElementById('loadingStatus').textContent=statuses[stepIndex];
-      if(stepIndex>0){var p=document.getElementById(steps[stepIndex-1]);p.className='flex items-center gap-3 step-done';p.querySelector('i').className='fa-solid fa-check text-emerald-400 text-xs w-4'}
+      if(stepIndex>0){var p=document.getElementById(steps[stepIndex-1]);p.className='flex items-center gap-3 step-done';p.querySelector('i').className='fa-solid fa-check text-emerald-400 text-xs w-4';}
       stepIndex++;
     }
   },700);
 
-  var username=input;
   var apiError=null;
-
   try{
     var controller=new AbortController();
-    var timeoutId=setTimeout(function(){controller.abort()},15000);
-    var resp=await fetch('/api/analyze?username='+encodeURIComponent(username)+'&platform='+currentPlatform,{method:'POST',
-    headers:{'Content-Type':'application/json'},
-    signal:controller.signal
-});
+    var timeoutId=setTimeout(function(){controller.abort();},15000);
+    var resp=await fetch('/api/analyze?username='+encodeURIComponent(channelId)+'&platform='+currentPlatform,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      signal:controller.signal
+    });
     clearTimeout(timeoutId);
-
     if(!resp.ok){
       var errBody='';
-      try{errBody=await resp.text()}catch(e){}
+      try{errBody=await resp.text();}catch(e){}
       apiError='API returned status '+resp.status+': '+errBody;
     }else{
       currentData=await resp.json();
     }
   }catch(e){
-    apiError='Network error: '+e.message+'. Make sure the server is running on http://localhost:8000';
+    apiError='Network error: '+e.message;
   }
 
   if(apiError){
@@ -277,19 +419,22 @@ async function runAnalysis(){
     document.getElementById('loadingSection').style.display='none';
     document.getElementById('heroSection').style.display='block';
     showToast(apiError,'error');
-    console.error('Analysis failed:',apiError);
     return;
   }
 
   setTimeout(function(){
     clearInterval(stepInt);
-    steps.forEach(function(s){var el=document.getElementById(s);el.className='flex items-center gap-3 step-done';el.querySelector('i').className='fa-solid fa-check text-emerald-400 text-xs w-4'});
+    steps.forEach(function(s){var el=document.getElementById(s);el.className='flex items-center gap-3 step-done';el.querySelector('i').className='fa-solid fa-check text-emerald-400 text-xs w-4';});
     document.getElementById('loadingSection').style.display='none';
     document.getElementById('resultsSection').style.display='block';
-    requestAnimationFrame(function(){requestAnimationFrame(function(){renderResults()})});
+    if(currentData&&currentData.first_analysis){
+      showToast('First analysis! Growth velocity improves after 30 min of tracking.','info');
+    }
+    requestAnimationFrame(function(){requestAnimationFrame(function(){renderResults();});});
   },2800);
 }
 
+/* ── Helpers ── */
 function animateCounter(id,target,dur,suffix){
   suffix=suffix||'';
   var el=document.getElementById(id);
@@ -309,21 +454,40 @@ function formatNum(n){
   return n.toString();
 }
 
+/* ── Render results ── */
 function renderResults(){
   var d=currentData;
-  if(!d){showToast('No data received','error');return}
+  if(!d){showToast('No data received','error');return;}
 
-  document.getElementById('creatorAvatar').textContent=(d.name||'?').charAt(0);
-  document.getElementById('creatorName').textContent=d.handle||d.username;
+  /* Avatar — real photo or initial fallback */
+  var avatarImg=document.getElementById('creatorAvatarImg');
+  var avatarFallback=document.getElementById('creatorAvatarFallback');
+  if(d.thumbnail){
+    avatarImg.src=d.thumbnail;
+    avatarImg.alt=d.name||'';
+    avatarImg.onload=function(){avatarImg.classList.remove('hidden');avatarFallback.classList.add('hidden');};
+    avatarImg.onerror=function(){avatarImg.classList.add('hidden');avatarFallback.classList.remove('hidden');avatarFallback.textContent=(d.name||'?').charAt(0).toUpperCase();};
+    avatarImg.classList.remove('hidden');
+    avatarFallback.classList.add('hidden');
+  }else{
+    avatarImg.classList.add('hidden');
+    avatarFallback.classList.remove('hidden');
+    avatarFallback.textContent=(d.name||'?').charAt(0).toUpperCase();
+  }
+
+  /* Header text */
+  document.getElementById('creatorName').textContent=d.name||d.username||'';
+  document.getElementById('creatorHandle').textContent=d.handle||'';
   var badge=document.getElementById('creatorPlatformBadge');
-  if(d.platform==='youtube'){badge.className='text-xs px-2.5 py-0.5 rounded-full font-medium platform-youtube';badge.innerHTML='<i class="fa-brands fa-youtube mr-1"></i>YouTube'}
-  else if(d.platform==='tiktok'){badge.className='text-xs px-2.5 py-0.5 rounded-full font-medium platform-tiktok';badge.innerHTML='<i class="fa-brands fa-tiktok mr-1"></i>TikTok'}
-  else{badge.className='text-xs px-2.5 py-0.5 rounded-full font-medium platform-instagram';badge.innerHTML='<i class="fa-brands fa-instagram mr-1"></i>Instagram'}
+  if(d.platform==='youtube'){badge.className='text-xs px-2.5 py-0.5 rounded-full font-medium platform-youtube';badge.innerHTML='<i class="fa-brands fa-youtube mr-1"></i>YouTube';}
+  else if(d.platform==='tiktok'){badge.className='text-xs px-2.5 py-0.5 rounded-full font-medium platform-tiktok';badge.innerHTML='<i class="fa-brands fa-tiktok mr-1"></i>TikTok';}
+  else{badge.className='text-xs px-2.5 py-0.5 rounded-full font-medium platform-instagram';badge.innerHTML='<i class="fa-brands fa-instagram mr-1"></i>Instagram';}
   document.getElementById('creatorNiche').textContent=d.niche||'';
   document.getElementById('creatorFollowers').textContent=(d.followersDisplay||formatNum(d.followers))+' followers';
   document.getElementById('creatorLocation').textContent=d.location||'';
   document.getElementById('creatorCadence').textContent=d.cadence||'';
 
+  /* Score ring */
   var circ=2*Math.PI*68;
   var ring=document.getElementById('scoreRing');
   ring.style.strokeDashoffset=circ.toString();
@@ -343,6 +507,7 @@ function renderResults(){
 
   renderTrajectoryChart('12m');
 
+  /* Drivers */
   var dc=document.getElementById('driversContainer');dc.innerHTML='';
   (d.drivers||[]).forEach(function(dr,i){
     var div=document.createElement('div');div.className='slide-up';div.style.animationDelay=(i*0.12)+'s';
@@ -350,9 +515,10 @@ function renderResults(){
     var tc=dr.strength>80?'text-emerald-400':dr.strength>60?'text-yellow-400':'text-orange-400';
     div.innerHTML='<div class="flex justify-between items-center mb-1.5"><span class="text-sm font-medium text-gray-200">'+dr.name+'</span><span class="font-mono text-xs font-semibold '+tc+'">'+dr.strength+'/100</span></div><div class="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden mb-2"><div class="progress-fill h-full '+bc+' rounded-full" style="width:0%"></div></div><p class="text-xs text-gray-500 leading-relaxed">'+dr.desc+'</p>';
     dc.appendChild(div);
-    setTimeout(function(){div.querySelector('.progress-fill').style.width=dr.strength+'%'},200+i*150);
+    setTimeout(function(){div.querySelector('.progress-fill').style.width=dr.strength+'%';},200+i*150);
   });
 
+  /* Risks */
   var rc=document.getElementById('risksContainer');rc.innerHTML='';
   (d.risks||[]).forEach(function(ri,i){
     var div=document.createElement('div');div.className='slide-up';div.style.animationDelay=(i*0.12+0.3)+'s';
@@ -361,9 +527,10 @@ function renderResults(){
     var rl=ri.level>50?'High':ri.level>30?'Medium':'Low';
     div.innerHTML='<div class="flex justify-between items-center mb-1.5"><span class="text-sm font-medium text-gray-200">'+ri.name+'</span><span class="flex items-center gap-2"><span class="text-xs '+tc+' font-medium">'+rl+'</span><span class="font-mono text-xs text-gray-500">'+ri.level+'/100</span></span></div><div class="w-full h-1.5 bg-gray-800 rounded-full overflow-hidden mb-2"><div class="risk-bar-fill h-full '+bc+' rounded-full" style="width:0%"></div></div><p class="text-xs text-gray-500 leading-relaxed">'+ri.desc+'</p>';
     rc.appendChild(div);
-    setTimeout(function(){div.querySelector('.risk-bar-fill').style.width=ri.level+'%'},400+i*150);
+    setTimeout(function(){div.querySelector('.risk-bar-fill').style.width=ri.level+'%';},400+i*150);
   });
 
+  /* Collab */
   if(d.collab){
     document.getElementById('collabWindow').textContent=d.collab.window;
     document.getElementById('collabBudget').textContent=d.collab.budget;
@@ -372,11 +539,12 @@ function renderResults(){
     ue.style.color=d.collab.urgency==='High'?'#ef4444':d.collab.urgency==='Medium'?'#f59e0b':'#10b981';
   }
 
+  /* Typing explanation */
   var ex=document.getElementById('aiExplanation');ex.textContent='';ex.classList.add('typing-cursor');
   var ci=0;var txt=d.explanation||'';
   var ti=setInterval(function(){
-    if(ci<txt.length){ex.textContent=txt.slice(0,ci+2);ci+=2}
-    else{ex.textContent=txt;ex.classList.remove('typing-cursor');clearInterval(ti)}
+    if(ci<txt.length){ex.textContent=txt.slice(0,ci+2);ci+=2;}
+    else{ex.textContent=txt;ex.classList.remove('typing-cursor');clearInterval(ti);}
   },18);
 
   renderEngagementChart();
@@ -385,7 +553,7 @@ function renderResults(){
 function renderTrajectoryChart(range){
   var d=currentData;if(!d)return;
   var canvas=document.getElementById('trajectoryChart');
-  if(trajectoryChart){trajectoryChart.destroy();trajectoryChart=null}
+  if(trajectoryChart){trajectoryChart.destroy();trajectoryChart=null;}
 
   var fc;
   if(range==='6m')fc=d.trajectoryForecast6||[];
@@ -397,8 +565,8 @@ function renderTrajectoryChart(range){
   var labels=[];
   var mN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var now=new Date();
-  for(var i=hL-1;i>=0;i--){var m=new Date(now.getFullYear(),now.getMonth()-i,1);labels.push(mN[m.getMonth()]+"'"+String(m.getFullYear()).slice(2))}
-  for(var i=1;i<=fcL;i++){var m=new Date(now.getFullYear(),now.getMonth()+i,1);labels.push(mN[m.getMonth()]+"'"+String(m.getFullYear()).slice(2))}
+  for(var i=hL-1;i>=0;i--){var m=new Date(now.getFullYear(),now.getMonth()-i,1);labels.push(mN[m.getMonth()]+"'"+String(m.getFullYear()).slice(2));}
+  for(var i=1;i<=fcL;i++){var m=new Date(now.getFullYear(),now.getMonth()+i,1);labels.push(mN[m.getMonth()]+"'"+String(m.getFullYear()).slice(2));}
 
   var hD=(d.trajectoryHistorical||[]).slice();for(var i=0;i<fcL;i++)hD.push(null);
   var fD=[];for(var i=0;i<hL-1;i++)fD.push(null);if(hL>0)fD.push(d.trajectoryHistorical[d.trajectoryHistorical.length-1]);for(var i=0;i<fcL;i++)fD.push(fc[i]);
@@ -412,8 +580,8 @@ function renderTrajectoryChart(range){
     options:{
       responsive:true,maintainAspectRatio:false,
       interaction:{mode:'index',intersect:false},
-      plugins:{legend:{display:false},tooltip:{backgroundColor:'#141422',borderColor:'#1e1e35',borderWidth:1,titleColor:'#e5e7eb',bodyColor:'#9ca3af',padding:10,callbacks:{label:function(ctx){return ctx.raw===null?null:ctx.dataset.label+': '+formatNum(ctx.raw)}}}},
-      scales:{x:{ticks:{color:'#4b5563',font:{size:10},maxTicksLimit:8},grid:{color:'rgba(30,30,53,0.5)'},border:{display:false}},y:{ticks:{color:'#4b5563',font:{size:10},callback:function(v){return formatNum(v)}},grid:{color:'rgba(30,30,53,0.5)'},border:{display:false}}}
+      plugins:{legend:{display:false},tooltip:{backgroundColor:'#141422',borderColor:'#1e1e35',borderWidth:1,titleColor:'#e5e7eb',bodyColor:'#9ca3af',padding:10,callbacks:{label:function(ctx){return ctx.raw===null?null:ctx.dataset.label+': '+formatNum(ctx.raw);}}}},
+      scales:{x:{ticks:{color:'#4b5563',font:{size:10},maxTicksLimit:8},grid:{color:'rgba(30,30,53,0.5)'},border:{display:false}},y:{ticks:{color:'#4b5563',font:{size:10},callback:function(v){return formatNum(v);}},grid:{color:'rgba(30,30,53,0.5)'},border:{display:false}}}
     }
   });
 }
@@ -428,18 +596,18 @@ function setChartRange(r){
 function renderEngagementChart(){
   var d=currentData;if(!d)return;
   var canvas=document.getElementById('engagementChart');
-  if(engagementChart){engagementChart.destroy();engagementChart=null}
+  if(engagementChart){engagementChart.destroy();engagementChart=null;}
   var ed=d.engagementData||[];
   var labels=[];var now=new Date();var mN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  for(var i=ed.length-1;i>=0;i--){var m=new Date(now.getFullYear(),now.getMonth()-i,1);labels.push(mN[m.getMonth()])}
-  var bc=ed.map(function(v,i){var t=i/Math.max(1,ed.length-1);return'rgba('+Math.floor(107+(245-107)*t)+','+Math.floor(114+(158-114)*t)+','+Math.floor(128+(11-128)*t)+',0.7)'});
+  for(var i=ed.length-1;i>=0;i--){var m=new Date(now.getFullYear(),now.getMonth()-i,1);labels.push(mN[m.getMonth()]);}
+  var bc=ed.map(function(v,i){var t=i/Math.max(1,ed.length-1);return'rgba('+Math.floor(107+(245-107)*t)+','+Math.floor(114+(158-114)*t)+','+Math.floor(128+(11-128)*t)+',0.7)';});
   engagementChart=new Chart(canvas,{
     type:'bar',
     data:{labels:labels,datasets:[{label:'Engagement Rate %',data:ed,backgroundColor:bc,borderRadius:4,borderSkipped:false}]},
     options:{
       responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{backgroundColor:'#141422',borderColor:'#1e1e35',borderWidth:1,titleColor:'#e5e7eb',bodyColor:'#9ca3af',padding:10,callbacks:{label:function(ctx){return'Engagement: '+ctx.raw+'%'}}}},
-      scales:{x:{ticks:{color:'#4b5563',font:{size:10}},grid:{display:false},border:{display:false}},y:{ticks:{color:'#4b5563',font:{size:10},callback:function(v){return v+'%'}},grid:{color:'rgba(30,30,53,0.5)'},border:{display:false}}}
+      plugins:{legend:{display:false},tooltip:{backgroundColor:'#141422',borderColor:'#1e1e35',borderWidth:1,titleColor:'#e5e7eb',bodyColor:'#9ca3af',padding:10,callbacks:{label:function(ctx){return'Engagement: '+ctx.raw+'%';}}}},
+      scales:{x:{ticks:{color:'#4b5563',font:{size:10}},grid:{display:false},border:{display:false}},y:{ticks:{color:'#4b5563',font:{size:10},callback:function(v){return v+'%';}},grid:{color:'rgba(30,30,53,0.5)'},border:{display:false}}}
     }
   });
 }
