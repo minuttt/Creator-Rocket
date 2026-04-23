@@ -10,6 +10,7 @@ class Creator(Base):
     channel_id = Column(String, unique=True, index=True)
     name = Column(String, index=True)
     platform = Column(String, default="youtube")
+    profile_picture_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     snapshots = relationship("Snapshot", back_populates="creator", cascade="all, delete-orphan")
