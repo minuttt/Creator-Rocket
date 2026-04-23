@@ -42,10 +42,44 @@ def get_channel_stats(channel_id: str) -> Optional[Dict]:
             "subscriber_count": int(stats.get("subscriberCount", 0)),
             "view_count": int(stats.get("viewCount", 0)),
             "video_count": int(stats.get("videoCount", 0)),
+            "thumbnail": snippet.get("thumbnails", {}).get("high", {}).get("url", "")  # ADD THIS
         }
     except requests.exceptions.RequestException as e:
         logger.error(f"YouTube API request failed for channel {channel_id}: {e}")
         return None
+
+
+
+def search_channels(query: str, max_results: int = 5) -> list:
+    """Search YouTube channels by name, return id + name + thumbnail."""
+    if not API_KEY:
+        return []
+    url = f"{BASE_URL}/search"
+    params = {
+        "part": "snippet",
+        "q": query,
+        "type": "channel",
+        "maxResults": max_results,
+        "key": API_KEY
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        results = []
+        for item in data.get("items", []):
+            snippet = item.get("snippet", {})
+            results.append({
+                "channel_id": item["id"]["channelId"],
+                "name": snippet.get("title", ""),
+                "description": snippet.get("description", "")[:80],
+                "thumbnail": snippet.get("thumbnails", {}).get("default", {}).get("url", "")
+            })
+        return results
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Channel search failed: {e}")
+        return []
+
 
 def get_recent_videos(channel_id: str, max_results: int = 5) -> List[Dict]:
     """Fetch recent videos and their stats for engagement proxy calculation."""
