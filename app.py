@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
+from sqlalchemy import inspect, text
 
 from db.database import engine, Base
 from api.routes import router
@@ -20,8 +21,68 @@ logger = logging.getLogger("creatorrocket")
 # Create SQLite Database Tables
 Base.metadata.create_all(bind=engine)
 
+def ensure_database_schema():
+    inspector = inspect(engine)
+    if "creators" not in inspector.get_table_names():
+        return
+
+    creator_columns = {col["name"] for col in inspector.get_columns("creators")}
+    with engine.begin() as conn:
+        if "profile_picture_url" not in creator_columns:
+            conn.execute(text("ALTER TABLE creators ADD COLUMN profile_picture_url VARCHAR"))
+            logger.info("Added creators.profile_picture_url column")
+
 # Background Scheduler Setup
 scheduler = BackgroundScheduler()
+
+FEATURE_NAMES = [
+    "velocity_7d", "velocity_30d", "acceleration", "engagement_rate",
+    "virality_score", "consistency_score", "niche_momentum", "audience_quality"
+]
+
+def ensure_prediction_model():
+    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "xgboost_model.pkl")
+    sample_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sample_creators.csv")
+
+    model_is_usable = False
+    if os.path.exists(model_path):
+        try:
+            import joblib
+            joblib.load(model_path)
+            model_is_usable = True
+        except Exception as exc:
+            logger.warning("Existing model is unusable and will be replaced: %s", exc)
+
+    if model_is_usable:
+        return
+
+    if not os.path.exists(sample_path):
+        logger.warning("Sample training dataset not found; continuing without a trained model.")
+        return
+
+    logger.info("Training calibrated XGBoost model from sample_creators.csv ...")
+    import pandas as pd
+    from joblib import dump
+    from xgboost import XGBClassifier
+
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    df = pd.read_csv(sample_path)
+    X = df[FEATURE_NAMES].astype("float32")
+    y = df["exploded"].astype("int32")
+
+    model = XGBClassifier(
+        n_estimators=160,
+        max_depth=4,
+        learning_rate=0.06,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        eval_metric="logloss",
+        verbosity=0,
+        random_state=42
+    )
+    model.fit(X, y)
+    dump(model, model_path)
+    logger.info("Calibrated breakout model saved to disk.")
 
 def scheduled_job():
     from services.scheduler import fetch_scheduled_stats
@@ -34,26 +95,9 @@ scheduler.add_job(scheduled_job, 'interval', minutes=30)
 async def lifespan(app: FastAPI):
     # Startup Logic
     logger.info("Starting CreatorRocket API...")
-    
-    # Train base ML model if it doesn't exist
-    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "xgboost_model.pkl")
-    if not os.path.exists(model_path):
-        logger.info("Training initial XGBoost model...")
-        import numpy as np
-        from xgboost import XGBClassifier
-        from sklearn.model_selection import train_test_split
-        from joblib import dump
-        
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        rng = np.random.RandomState(42)
-        n = 5000
-        X = rng.uniform(0, 100, (n, 8))
-        y = (X[:,0] * 0.4 + X[:,3] * 0.6 > 50).astype(int)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        model = XGBClassifier(n_estimators=100, max_depth=3, verbosity=0)
-        model.fit(X_train, y_train)
-        dump(model, model_path)
-        logger.info("Base model trained and saved.")
+
+    ensure_database_schema()
+    ensure_prediction_model()
 
     scheduler.start()
     logger.info("Background scheduler started. Tracking creators will update every 30 mins.")

@@ -1,5 +1,6 @@
 import logging
 import time
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from db.database import SessionLocal
 from db.models import Creator, Snapshot
@@ -19,16 +20,31 @@ def fetch_scheduled_stats():
             stats = get_channel_stats(creator.channel_id)
             
             if stats:
-                # Append new snapshot (do NOT overwrite old data)
-                new_snapshot = Snapshot(
-                    creator_id=creator.id,
-                    subscriber_count=stats["subscriber_count"],
-                    view_count=stats["view_count"],
-                    video_count=stats["video_count"]
+                latest = (
+                    db.query(Snapshot)
+                    .filter(Snapshot.creator_id == creator.id)
+                    .order_by(Snapshot.timestamp.desc())
+                    .first()
                 )
-                db.add(new_snapshot)
-                db.commit()
-                logger.info(f"Added new snapshot for {creator.name}")
+                changed = latest is None or (
+                    latest.subscriber_count != stats["subscriber_count"] or
+                    latest.view_count != stats["view_count"] or
+                    latest.video_count != stats["video_count"]
+                )
+                stale = latest is None or (datetime.utcnow() - latest.timestamp > timedelta(hours=12))
+
+                if changed or stale:
+                    new_snapshot = Snapshot(
+                        creator_id=creator.id,
+                        subscriber_count=stats["subscriber_count"],
+                        view_count=stats["view_count"],
+                        video_count=stats["video_count"]
+                    )
+                    db.add(new_snapshot)
+                    db.commit()
+                    logger.info(f"Added new snapshot for {creator.name}")
+                else:
+                    logger.info(f"No material change for {creator.name}; skipped snapshot write")
             else:
                 logger.warning(f"Skipped {creator.name} due to API error or missing data.")
             
