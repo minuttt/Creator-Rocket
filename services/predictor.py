@@ -1,5 +1,12 @@
 import math
-from typing import Dict, Any
+import os
+from typing import Any, Dict, Optional
+
+import joblib
+
+from services.training_pipeline import FEATURE_COLUMNS, MODEL_PATH
+
+_MODEL_CACHE = {"mtime": None, "artifact": None}
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -42,40 +49,93 @@ def _score_components(features: Dict[str, Any]) -> Dict[str, float]:
     }
 
 
+def _load_observed_model() -> Optional[Dict]:
+    if not os.path.exists(MODEL_PATH):
+        _MODEL_CACHE["artifact"] = None
+        _MODEL_CACHE["mtime"] = None
+        return None
+
+    mtime = os.path.getmtime(MODEL_PATH)
+    if _MODEL_CACHE["artifact"] is not None and _MODEL_CACHE["mtime"] == mtime:
+        return _MODEL_CACHE["artifact"]
+
+    artifact = joblib.load(MODEL_PATH)
+    _MODEL_CACHE["artifact"] = artifact
+    _MODEL_CACHE["mtime"] = mtime
+    return artifact
+
+
+def _predict_observed_model(features: Dict[str, Any]) -> Optional[Dict[str, float]]:
+    artifact = _load_observed_model()
+    if not artifact:
+        return None
+
+    model = artifact.get("model")
+    feature_columns = artifact.get("feature_columns") or FEATURE_COLUMNS
+    row = [[float(features.get(column, 0.0) or 0.0) for column in feature_columns]]
+    probability = float(model.predict_proba(row)[0][1])
+    return {
+        "probability": probability,
+        "example_count": int(artifact.get("example_count", 0)),
+        "holdout_accuracy": float(artifact.get("holdout_accuracy") or 0.0),
+        "holdout_auc": float(artifact.get("holdout_auc") or 0.0),
+    }
+
+
 def predict_trend(features: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Evidence-based breakout predictor.
+    Hybrid predictor.
 
-    This intentionally avoids relying on the synthetic sample XGBoost model as the
-    primary source of truth. The score is driven by signals we can justify from
-    either public YouTube data or owner analytics when available.
+    The heuristic evidence stack remains the fallback when there is not enough
+    tracked data. Once the app has observed enough real creator outcomes, a
+    trained logistic model is blended in and becomes the primary probability
+    signal.
     """
     components = _score_components(features)
 
     evidence_signal = (
-        (components["growth"] * 0.26) +
-        (components["distribution"] * 0.24) +
-        (components["engagement"] * 0.20) +
-        (components["retention"] * 0.15) +
-        (components["audience"] * 0.15)
+        (components["growth"] * 0.26)
+        + (components["distribution"] * 0.24)
+        + (components["engagement"] * 0.20)
+        + (components["retention"] * 0.15)
+        + (components["audience"] * 0.15)
     )
 
-    calibrated = _sigmoid((evidence_signal - 0.58) * 5.6)
+    heuristic_probability = _sigmoid((evidence_signal - 0.58) * 5.6)
     confidence = components["confidence"]
+    observed_prediction = _predict_observed_model(features)
+
+    predictor_mode = "evidence_based_v2"
+    blended_probability = heuristic_probability
+    training_strength = 0.0
+    if observed_prediction:
+        example_count = observed_prediction["example_count"]
+        training_strength = _clamp(example_count / 120.0, 0.18, 0.6)
+        quality_bonus = _clamp(observed_prediction["holdout_accuracy"], 0.45, 0.85) - 0.45
+        training_strength = _clamp(training_strength + quality_bonus * 0.4, 0.2, 0.75)
+        blended_probability = (
+            (heuristic_probability * (1.0 - training_strength))
+            + (observed_prediction["probability"] * training_strength)
+        )
+        predictor_mode = "hybrid_observed_v1"
+
     confidence_shrink = 0.52 + (confidence * 0.48)
-    prob_score = int(round(_clamp(calibrated * confidence_shrink, 0.02, 0.98) * 100))
+    prob_score = int(round(_clamp(blended_probability * confidence_shrink, 0.02, 0.98) * 100))
 
     trend_score = (
-        (components["growth"] * 35.0) +
-        (components["distribution"] * 25.0) +
-        (components["engagement"] * 18.0) +
-        (components["retention"] * 10.0) +
-        (components["audience"] * 12.0)
+        (components["growth"] * 35.0)
+        + (components["distribution"] * 25.0)
+        + (components["engagement"] * 18.0)
+        + (components["retention"] * 10.0)
+        + (components["audience"] * 12.0)
     ) * confidence
 
     return {
         "prob_score": max(1, min(99, prob_score)),
         "trend_score": round(_clamp(trend_score, 0.0, 100.0), 2),
         "confidence": round(confidence, 2),
-        "predictor_mode": "evidence_based_v2"
+        "predictor_mode": predictor_mode,
+        "model_blend": round(training_strength, 2),
+        "model_probability": round(observed_prediction["probability"], 4) if observed_prediction else None,
+        "heuristic_probability": round(heuristic_probability, 4),
     }

@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
 from sqlalchemy import inspect, text
@@ -78,6 +79,10 @@ app.add_middleware(
 )
 
 app.include_router(router)
+
+static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend", "assets")
+if os.path.isdir(static_dir):
+    app.mount("/assets", StaticFiles(directory=static_dir), name="assets")
 
 # Serve Frontend UI
 @app.get("/", response_class=HTMLResponse)
