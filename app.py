@@ -35,54 +35,15 @@ def ensure_database_schema():
 # Background Scheduler Setup
 scheduler = BackgroundScheduler()
 
-FEATURE_NAMES = [
-    "velocity_7d", "velocity_30d", "acceleration", "engagement_rate",
-    "virality_score", "consistency_score", "niche_momentum", "audience_quality"
-]
-
 def ensure_prediction_model():
-    model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "xgboost_model.pkl")
-    sample_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sample_creators.csv")
+    """
+    Legacy hook kept for startup compatibility.
 
-    model_is_usable = False
-    if os.path.exists(model_path):
-        try:
-            import joblib
-            joblib.load(model_path)
-            model_is_usable = True
-        except Exception as exc:
-            logger.warning("Existing model is unusable and will be replaced: %s", exc)
-
-    if model_is_usable:
-        return
-
-    if not os.path.exists(sample_path):
-        logger.warning("Sample training dataset not found; continuing without a trained model.")
-        return
-
-    logger.info("Training calibrated XGBoost model from sample_creators.csv ...")
-    import pandas as pd
-    from joblib import dump
-    from xgboost import XGBClassifier
-
-    os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    df = pd.read_csv(sample_path)
-    X = df[FEATURE_NAMES].astype("float32")
-    y = df["exploded"].astype("int32")
-
-    model = XGBClassifier(
-        n_estimators=160,
-        max_depth=4,
-        learning_rate=0.06,
-        subsample=0.9,
-        colsample_bytree=0.9,
-        eval_metric="logloss",
-        verbosity=0,
-        random_state=42
-    )
-    model.fit(X, y)
-    dump(model, model_path)
-    logger.info("Calibrated breakout model saved to disk.")
+    We no longer auto-train from the synthetic sample CSV because that creates a
+    false sense of accuracy. The predictor now uses evidence-based scoring from
+    live public data, with optional owner-only YouTube Analytics enrichment.
+    """
+    logger.info("Using evidence-based predictor runtime; skipping synthetic model bootstrap.")
 
 def scheduled_job():
     from services.scheduler import fetch_scheduled_stats

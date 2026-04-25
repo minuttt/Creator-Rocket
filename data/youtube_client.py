@@ -1,6 +1,7 @@
 import os
 import logging
 import requests
+import re
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
 from dotenv import load_dotenv
@@ -10,6 +11,17 @@ logger = logging.getLogger("creatorrocket")
 
 API_KEY = os.getenv("YOUTUBE_API_KEY")
 BASE_URL = "https://www.googleapis.com/youtube/v3"
+
+def _parse_iso8601_duration(value: str) -> int:
+    if not value:
+        return 0
+    match = re.match(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$", value)
+    if not match:
+        return 0
+    hours = int(match.group(1) or 0)
+    minutes = int(match.group(2) or 0)
+    seconds = int(match.group(3) or 0)
+    return (hours * 3600) + (minutes * 60) + seconds
 
 def _request(endpoint: str, params: Dict) -> Optional[Dict]:
     if not API_KEY or API_KEY == "YOUR_YOUTUBE_API_KEY_HERE":
@@ -173,7 +185,7 @@ def get_recent_videos(channel_id: str, max_results: int = 5) -> List[Dict]:
     if not video_ids:
         return []
 
-    vids_data = _request("videos", {"part": "statistics,snippet", "id": ",".join(video_ids)})
+    vids_data = _request("videos", {"part": "statistics,snippet,contentDetails", "id": ",".join(video_ids)})
     if not vids_data:
         return []
 
@@ -182,6 +194,7 @@ def get_recent_videos(channel_id: str, max_results: int = 5) -> List[Dict]:
             "video_id": v["id"],
             "title": v.get("snippet", {}).get("title", ""),
             "published_at": v.get("snippet", {}).get("publishedAt") or video_lookup.get(v["id"], {}).get("publishedAt"),
+            "duration_seconds": _parse_iso8601_duration(v.get("contentDetails", {}).get("duration", "")),
             "views": int(v.get("statistics", {}).get("viewCount", 0)),
             "likes": int(v.get("statistics", {}).get("likeCount", 0)),
             "comments": int(v.get("statistics", {}).get("commentCount", 0))

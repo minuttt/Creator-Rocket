@@ -7,6 +7,7 @@ from typing import Optional, Tuple, List, Dict
 from db.database import get_db
 from db.models import Creator, Snapshot
 from data.youtube_client import get_channel_stats, get_recent_videos, resolve_channel, search_channels
+from data.youtube_analytics import get_recent_video_analytics
 from services import feature_engineer, predictor, explanation_engine, simulation
 
 logger = logging.getLogger("creatorrocket")
@@ -89,7 +90,8 @@ def _upsert_creator_with_snapshot(db: Session, creator_input: str, force_snapsho
     return creator, resolved, snapshots
 
 def _build_analysis_payload(creator: Creator, resolved: Dict, snapshots: List[Snapshot], latest_vids: List[Dict], platform: str = "youtube") -> Dict:
-    features = feature_engineer.compute_features_from_snapshots(snapshots, latest_vids)
+    analytics_by_video = get_recent_video_analytics(creator.channel_id, latest_vids)
+    features = feature_engineer.compute_features_from_snapshots(snapshots, latest_vids, analytics_by_video)
     prediction = predictor.predict_trend(features)
     raw_data = {
         "name": creator.name,
@@ -121,6 +123,8 @@ def _build_analysis_payload(creator: Creator, resolved: Dict, snapshots: List[Sn
         "probScore": prediction["prob_score"],
         "prob12": min(99, max(1, prediction["prob_score"] + 6)),
         "prob24": min(99, max(1, prediction["prob_score"] + 10)),
+        "predictorMode": prediction.get("predictor_mode", "evidence_based_v2"),
+        "analyticsCoverage": features.get("analytics_coverage", 0.0),
         "velocity": features["velocity_7d"],
         "engagementRate": features["engagement_rate"],
         "viralityIndex": features["virality_score"],
@@ -164,8 +168,9 @@ async def get_trending(db: Session = Depends(get_db)):
         if not snapshots:
             continue
             
-        latest_vids = get_recent_videos(creator.channel_id)
-        features = feature_engineer.compute_features_from_snapshots(snapshots, latest_vids)
+        latest_vids = get_recent_videos(creator.channel_id, max_results=12)
+        analytics_by_video = get_recent_video_analytics(creator.channel_id, latest_vids)
+        features = feature_engineer.compute_features_from_snapshots(snapshots, latest_vids, analytics_by_video)
         prediction = predictor.predict_trend(features)
         latest_snap = snapshots[0]
         
@@ -205,5 +210,9 @@ async def analyze_creator(username: str, platform: str = "youtube", db: Session 
 
 @router.get("/api/health")
 async def health():
-    model_loaded = os.path.exists(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "xgboost_model.pkl"))
-    return {"status": "ok", "model_loaded": model_loaded, "realtime_youtube_enabled": True}
+    return {
+        "status": "ok",
+        "model_loaded": True,
+        "realtime_youtube_enabled": True,
+        "predictor_mode": "evidence_based_v2"
+    }

@@ -1,108 +1,81 @@
-import os
-import logging
 import math
 from typing import Dict, Any
-import numpy as np
-import joblib
 
-logger = logging.getLogger("creatorrocket")
-
-MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-MODEL_PATH = os.path.join(MODEL_DIR, "xgboost_model.pkl")
-FEATURE_NAMES = [
-    "velocity_7d", "velocity_30d", "acceleration", "engagement_rate",
-    "virality_score", "consistency_score", "niche_momentum", "audience_quality"
-]
-
-model = None
-
-def load_model():
-    global model
-    if model is None:
-        if os.path.exists(MODEL_PATH):
-            try:
-                model = joblib.load(MODEL_PATH)
-                logger.info("XGBoost model loaded from disk")
-            except Exception as exc:
-                logger.warning("Unable to load model from disk, falling back to heuristic calibration: %s", exc)
-                model = False
-        else:
-            logger.error("Model file not found! Run application startup to generate base model.")
-            model = False
-    return None if model is False else model
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
-def _heuristic_probability(features: Dict[str, Any]) -> int:
+
+def _sigmoid(value: float) -> float:
+    return 1.0 / (1.0 + math.exp(-value))
+
+
+def _score_components(features: Dict[str, Any]) -> Dict[str, float]:
     followers = max(float(features.get("followers", 0)), 1.0)
-    follower_scale = _clamp(math.log10(followers) / 5.0, 0.0, 1.0)
     velocity_7d = max(float(features.get("velocity_7d", 0)), 0.0)
     velocity_30d = max(float(features.get("velocity_30d", 0)), 0.0)
     acceleration = _clamp(float(features.get("acceleration", 50.0)) / 100.0, 0.0, 1.0)
+
+    relative_growth = _clamp((velocity_7d / followers) * 18.0, 0.0, 1.0)
+    absolute_growth = _clamp(math.log10(max(velocity_30d, 1.0)) / 4.6, 0.0, 1.0)
     engagement = _clamp(float(features.get("engagement_rate", 0.0)) / 20.0, 0.0, 1.0)
     virality = _clamp(float(features.get("virality_score", 0.0)) / 10.0, 0.0, 1.0)
     consistency = _clamp(float(features.get("consistency_score", 0.0)) / 100.0, 0.0, 1.0)
-    niche = _clamp(float(features.get("niche_momentum", 50.0)) / 100.0, 0.0, 1.0)
-    audience = _clamp(float(features.get("audience_quality", 60.0)) / 100.0, 0.0, 1.0)
-    confidence = _clamp(float(features.get("confidence", 0.1)), 0.1, 1.0)
+    niche_momentum = _clamp(float(features.get("niche_momentum", 0.0)) / 100.0, 0.0, 1.0)
+    audience_quality = _clamp(float(features.get("audience_quality", 0.0)) / 100.0, 0.0, 1.0)
 
-    relative_growth = _clamp(velocity_7d / max(followers, 1.0) * 20.0, 0.0, 1.0)
-    absolute_growth = _clamp(math.log10(max(velocity_30d, 1.0)) / 4.0, 0.0, 1.0)
+    comment_rate = _clamp(float(features.get("comment_rate_per_1k", 0.0)) / 8.0, 0.0, 1.2)
+    like_rate = _clamp(float(features.get("like_rate_per_1k", 0.0)) / 45.0, 0.0, 1.2)
+    share_rate = _clamp(float(features.get("share_rate_per_1k", 0.0)) / 2.0, 0.0, 1.2)
+    retention = _clamp(float(features.get("retention_score", 50.0)) / 100.0, 0.0, 1.0)
+    breakout_ratio = _clamp(float(features.get("breakout_ratio", 1.0)) / 1.8, 0.0, 1.3)
+    subscriber_conversion = _clamp(float(features.get("subscriber_conversion_per_1k", 0.0)) / 2.0, 0.0, 1.2)
+    analytics_coverage = _clamp(float(features.get("analytics_coverage", 0.0)), 0.0, 1.0)
 
-    core_signal = (
-        (relative_growth * 0.22) +
-        (absolute_growth * 0.18) +
-        (engagement * 0.20) +
-        (virality * 0.12) +
-        (consistency * 0.10) +
-        (acceleration * 0.08) +
-        (niche * 0.06) +
-        (audience * 0.04)
-    )
+    return {
+        "growth": (relative_growth * 0.55) + (absolute_growth * 0.25) + (acceleration * 0.20),
+        "distribution": (virality * 0.40) + (breakout_ratio * 0.40) + (niche_momentum * 0.20),
+        "engagement": (comment_rate * 0.40) + (like_rate * 0.20) + (share_rate * 0.20) + (engagement * 0.20),
+        "retention": (retention * 0.75) + (analytics_coverage * 0.25),
+        "audience": (subscriber_conversion * 0.40) + (audience_quality * 0.40) + (consistency * 0.20),
+        "confidence": _clamp(float(features.get("confidence", 0.1)), 0.1, 1.0),
+    }
 
-    # Larger creators should need stronger evidence, but they should not be zeroed out
-    # just because subscriber-relative ratios compress at scale.
-    scale_bonus = (follower_scale - 0.45) * 0.10
-    confidence_shrink = 0.55 + (confidence * 0.45)
-    prob = (core_signal + scale_bonus) * confidence_shrink
-    return int(round(_clamp(prob, 0.02, 0.98) * 100))
 
 def predict_trend(features: Dict[str, Any]) -> Dict[str, Any]:
-    """Predict breakout probability and calculate composite trend score."""
-    m = load_model()
-    confidence = _clamp(float(features.get("confidence", 0.1)), 0.1, 1.0)
-    heuristic_prob = _heuristic_probability(features)
+    """
+    Evidence-based breakout predictor.
 
-    if m is None:
-        model_prob_score = heuristic_prob
-    else:
-        vector = [float(features.get(name, 0)) for name in FEATURE_NAMES]
-        X = np.array([vector], dtype=np.float32)
+    This intentionally avoids relying on the synthetic sample XGBoost model as the
+    primary source of truth. The score is driven by signals we can justify from
+    either public YouTube data or owner analytics when available.
+    """
+    components = _score_components(features)
 
-        prob = float(m.predict_proba(X)[0][1])
-        model_prob_score = max(1, min(99, int(round(prob * 100))))
+    evidence_signal = (
+        (components["growth"] * 0.26) +
+        (components["distribution"] * 0.24) +
+        (components["engagement"] * 0.20) +
+        (components["retention"] * 0.15) +
+        (components["audience"] * 0.15)
+    )
 
-    # Blend model output with a calibrated heuristic so the score stays stable
-    # when live features drift away from the training distribution.
-    prob_score = int(round((model_prob_score * 0.45) + (heuristic_prob * 0.55)))
-    
-    # Real Trend Score Calculation
-    followers = max(float(features.get("followers", 0)), 1.0)
-    relative_velocity = _clamp(float(features.get("velocity_7d", 0)) / followers * 1500, 0.0, 100.0)
-    absolute_velocity = _clamp(math.log10(max(float(features.get("velocity_30d", 0)), 1.0)) * 24.0, 0.0, 100.0)
-    sub_growth_norm = (relative_velocity * 0.55) + (absolute_velocity * 0.45)
-    engagement_norm = _clamp((float(features.get("engagement_rate", 0)) / 20.0) * 100, 0.0, 100.0)
-    velocity_norm = _clamp(float(features.get("acceleration", 50.0)), 0.0, 100.0)
-    
-    # Formula: 0.5 * subscriber_growth + 0.3 * engagement + 0.2 * velocity
-    trend_score = (0.5 * sub_growth_norm) + (0.3 * engagement_norm) + (0.2 * velocity_norm)
-    
-    # Adjust trend score by data confidence
-    adjusted_trend_score = trend_score * confidence
-    
+    calibrated = _sigmoid((evidence_signal - 0.58) * 5.6)
+    confidence = components["confidence"]
+    confidence_shrink = 0.52 + (confidence * 0.48)
+    prob_score = int(round(_clamp(calibrated * confidence_shrink, 0.02, 0.98) * 100))
+
+    trend_score = (
+        (components["growth"] * 35.0) +
+        (components["distribution"] * 25.0) +
+        (components["engagement"] * 18.0) +
+        (components["retention"] * 10.0) +
+        (components["audience"] * 12.0)
+    ) * confidence
+
     return {
         "prob_score": max(1, min(99, prob_score)),
-        "trend_score": round(adjusted_trend_score, 2),
-        "confidence": round(confidence, 2)
+        "trend_score": round(_clamp(trend_score, 0.0, 100.0), 2),
+        "confidence": round(confidence, 2),
+        "predictor_mode": "evidence_based_v2"
     }
